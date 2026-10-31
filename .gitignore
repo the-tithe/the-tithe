@@ -1,0 +1,11 @@
+# The original Hazke source this started from (credited in firmware/CREDITS.md)
+hazke-1.4.0/
+hazke-1.4.0.tar.gz
+
+# Build outputs, made by PlatformIO, the renderer and the manual tool
+firmware/.pio/
+firmware/dist/
+firmware/shots/
+firmware/manual/pages/
+__pycache__/
+.DS_Store

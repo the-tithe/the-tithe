@@ -1,0 +1,4 @@
+.pio/
+shots/
+__pycache__/
+dist/
