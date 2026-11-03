@@ -1,0 +1,15 @@
+# The Tithe's flash layout: the standard 8 MB one, with the data area named
+# "tithe" rather than "spiffs". Installed as a full image (Tithe-vX.bin from a
+# release), M5Launcher 2.6 and later read this table and give the game a data
+# area of its own under that name, kept across updates. Older launchers keep
+# their own table and a shared "spiffs" area, which the game falls back to
+# (SaveStore::begin). Written whole with M5Burner or esptool, this is the
+# Cardputer's table, and the area lands where "spiffs" was, so a save kept
+# there by an earlier full image is still found.
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     0x9000,  0x5000,
+otadata,  data, ota,     0xe000,  0x2000,
+app0,     app,  ota_0,   0x10000, 0x330000,
+app1,     app,  ota_1,   0x340000,0x330000,
+tithe,    data, spiffs,  0x670000,0x180000,
+coredump, data, coredump,0x7F0000,0x10000,

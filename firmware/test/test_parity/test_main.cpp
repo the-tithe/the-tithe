@@ -31,7 +31,7 @@ static void test_every_sale_matches_the_simulator() {
     r.calling = v.calling;
     r.n.veil = v.veil;
     if (v.pickpocket) { r.trinkets[0] = Cat::Trinket_pickpocket; r.nTrinkets = 1; }
-    for (int g = 0; g < 9; g++) r.state[growingId(g)] = v.state[g];
+    for (int g = 0; g < GrowingCount; g++) r.state[growingId(g)] = v.state[g];
     r.standing[Hearth] = v.hearth;
     r.n.newTonight = (uint8_t)v.newTonight;
     r.n.hollows = v.hollows;

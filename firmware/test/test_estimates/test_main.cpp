@@ -119,22 +119,6 @@ static void test_a_quiet_deck_says_nothing() {
 
 // ---- The stall --------------------------------------------------------------------
 
-static void test_fewer_offerings_and_its_words() {
-  // At 1,000 an offering a 4,700 Tithe is 4.7 offerings; half again makes it 3.13.
-  TEST_ASSERT_DOUBLE_WITHIN(0.01, 1.57, fewerOfferings(0.5, 4700, 1000));
-  TEST_ASSERT_DOUBLE_WITHIN(0.01, 0.43, fewerOfferings(0.1, 4700, 1000));
-  TEST_ASSERT_EQUAL_DOUBLE(0, fewerOfferings(0, 4700, 1000));
-  TEST_ASSERT_EQUAL_DOUBLE(0, fewerOfferings(0.5, 4700, 0));
-  char b[40];
-  TEST_ASSERT_EQUAL_STRING("~1.5 FEWER OFFERINGS A NIGHT", fewerText(1.57, b, sizeof(b)));
-  TEST_ASSERT_EQUAL_STRING("~0.4 FEWER OFFERINGS A NIGHT", fewerText(0.43, b, sizeof(b)));
-  TEST_ASSERT_EQUAL_STRING("~1 FEWER OFFERING A NIGHT", fewerText(1.0, b, sizeof(b)));
-  TEST_ASSERT_EQUAL_STRING("~1 FEWER OFFERING A NIGHT", fewerText(1.2, b, sizeof(b)));
-  TEST_ASSERT_EQUAL_STRING("~2 FEWER OFFERINGS A NIGHT", fewerText(2.2, b, sizeof(b)));
-  TEST_ASSERT_EQUAL_STRING("~0.1 FEWER OFFERINGS A NIGHT", fewerText(0.01, b, sizeof(b)));
-  TEST_ASSERT_TRUE(strlen(fewerText(12.3, b, sizeof(b))) <= 40);
-}
-
 static void test_the_star_ranges_over_polish() {
   r.night = 3;
   for (int i = 0; i < 6; i++) {   // a few sales, so the star has something to judge by
@@ -150,7 +134,6 @@ static void test_the_star_ranges_over_polish() {
   TEST_ASSERT_EQUAL(-1, shop.star);           // an empty shelf
   TEST_ASSERT_TRUE(shop.starPolish >= 1);     // ...so a Polish is the star
   TEST_ASSERT_TRUE(starGain(shop, r, mem) > 0.05);
-  TEST_ASSERT_TRUE(starFewer(shop, r, mem) > 0);
   // A relic that beats every Polish takes the star back from YOURS.
   shop.relics[shop.nRelics++] = relicOffer(R_blood_moon, -1, -1);
   starBest(shop, r, mem);
@@ -279,7 +262,6 @@ int main() {
   RUN_TEST(test_notches_are_the_pace_for_each_portent);
   RUN_TEST(test_more_tonight_uses_reach_then_the_average);
   RUN_TEST(test_a_quiet_deck_says_nothing);
-  RUN_TEST(test_fewer_offerings_and_its_words);
   RUN_TEST(test_the_star_ranges_over_polish);
   RUN_TEST(test_a_quiet_deck_has_no_star);
   RUN_TEST(test_the_stall_sees_the_night_ahead);

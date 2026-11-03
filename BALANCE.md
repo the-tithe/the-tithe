@@ -137,6 +137,43 @@ always could, and their rules changed (UNLOCKS.md has the new texts).
 | Contractor | 73% | 20% | 6% |
 | Glitch (the hard one) | 62% | 21% | 18% |
 
+## Growing relics and the Iron jump (Nov 2026)
+
+The goal: Chalk and Lead stay easy enough for a new player, and from Iron the habits that won them stop
+being enough, so the next rung asks for smarter relic choices and a different way of playing energies,
+not luck or a busy street. Balatro is the model: on its high stakes a run is won by scaling jokers bought
+before they pay, and its shop offers about 12% xMult jokers.
+
+What changed: five new growing relics (Pedometer, Mixtape, Rain gauge, Prism jar, Seed vault), every
+growing relic grows 3x what it did, the shelf lost its always-a-multiplier slot and leans toward growing
+relics (about 25% of shelf relics now multiply, from 49%), Iron makes Nights 5, 6 and 7 ask x1.25, x1.5
+and x1.75, Ash makes the same energy twice in a row pay 30% less, and Overnight accelerates (x2, x2.5,
+x3...) so a growing build still ends.
+
+Measured with the habit bot (firmware/test/test_depth, the real engine, everything unlocked, 500 weeks a
+cell). "Follows the star" buys what the stall's star marks, and the star rates a growing relic at what
+it adds today, which is nothing. "Buys growers early" values a growing relic for what it will be by
+Night 7.
+
+| Habit | Chalk | Lead | Iron | Ash | Bone | Silver | Obsidian | Gold |
+|---|---|---|---|---|---|---|---|---|
+| Follows the star | 94 | 83 | 66 | 55 | 46 | 42 | 39 | 28 |
+| Buys growers early | 99 | 93 | 87 | 81 | 72 | 72 | 66 | 54 |
+| Focus only (one energy) | 94 | 86 | 70 | 16 | 12 | 10 | 3 | 3 |
+| Before (old shelf and growth), follows the star | 95 | 82 | 61 | 50 | 39 | 37 | 32 | 21 |
+| Before, buys growers early | 95 | 81 | 61 | 54 | 40 | 38 | 33 | 22 |
+
+Before, buying growing relics early was worth nothing; now it is worth about 20 points from Iron up.
+Focus-only play wins Iron about as often as the star does and then falls to 16% at Ash.
+
+What didn't work: coin relics (a Tip jar paying 2 coin a dawn, a Paper route that pays one more each
+dawn) changed nothing, because the bot finishes winning weeks with about 45 coin; coin isn't scarce
+enough for an economy habit to matter. Rerolling more didn't help either, for the same reason.
+
+balance_sim.py mirrors every rule, but its players all value growing relics ahead (GROWTH), novices
+included, so its Pact table is kinder from Iron up (novice 95, 90, 88, 87 on Chalk to Ash). The habit
+bot is the measure for this change.
+
 ## Still open
 
 - **One-energy builds still lead.** 57% of broken-open builds lean on the Elemental school. Part

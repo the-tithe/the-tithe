@@ -22,9 +22,10 @@ namespace App {
 inline BootScreen::Info bootInfo{};
 
 // Where to go once the boot animation ends: back to whatever the save was in
-// the middle of.
-inline void resume() {
+// the middle of. `battery`: the charge now, for a Night that closes here.
+inline void resume(int battery) {
   UI::setTheme(game.career.theme);
+  restoreStray();
   switch (game.phase) {
     case Game::Phase::NightEnd: go(Mode::NightEnd); break;
     case Game::Phase::Shop:
@@ -34,10 +35,35 @@ inline void resume() {
     case Game::Phase::Lost: go(Mode::Lost); break;
     case Game::Phase::Night:
       go(Mode::Scanner);
-      closeNight(-1);   // switched off after paying, before the Night closed
+      closeNight(battery);   // switched off after paying, before the Night closed
       break;
-    default: go(inRun() ? Mode::Scanner : Mode::Bind); break;
+    default:
+      if (!inRun() && resumeReveal()) go(Mode::Reveal);   // switched off on the week's reveal
+      else go(inRun() ? Mode::Scanner : Mode::Bind);
+      break;
   }
+}
+
+// What the boot found of the save, said once the boot animation is over.
+// `flash`: the Deck has a flash data area (without one the card is the only copy).
+inline void sayBoot(Game::SaveFormat::Boot b, bool flash, bool otherDeck) {
+  using B = Game::SaveFormat::Boot;
+  switch (b) {
+    case B::SetAside: toastAfter("OLD SAVE SET ASIDE. NEW CAREER", UI::Rec, 3.0f); break;
+    case B::CardDamaged: toastAfter("SAVE DAMAGED: LOADED THE CARD COPY", UI::Rec, 3.0f); break;
+    case B::CardNewer: toastAfter("LOADED THE CARD COPY: IT WAS NEWER", UI::Text, 3.0f); break;
+    case B::Card: if (flash) toastAfter("LOADED THE CARD COPY", UI::Text, 2.5f); break;
+    default: break;
+  }
+  if (otherDeck) toastAfter("THIS SAVE WAS MADE ON ANOTHER DECK", UI::Rec, 3.0f);
+}
+
+// What's wrong with where the game is kept, said after the boot. `fix`: what
+// to do about the card (SDCard::fix), or nullptr. `keeping`: a save would reach
+// flash or the card.
+inline void sayStorage(const char* fix, bool cardIn, bool keeping) {
+  if (fix) toastAfter(fix, UI::Rec, 4.0f);
+  if (!keeping) toastAfter(cardIn || fix ? "NOTHING WILL BE SAVED" : "NO CARD: NOTHING WILL BE SAVED", UI::Rec, 4.0f);
 }
 
 // A fresh game: a new career and no run.
@@ -79,12 +105,17 @@ inline void dowseSample(Sightings& sky, float heading, int rssi, uint32_t nowMs)
   }
 }
 
-// A twist of the wrist.
-inline void twist(const Ctx& c) {
-  if (inRun() && Game::castWard(run(), hereNow(c))) {
-    toast("HIDDEN: THE WARDENS CAN'T HEAR YOU");
-    save();
+// A twist of the wrist. True when it cast the ward (the sigil and its tone are
+// the caller's); a week with the ward spent tonight says so instead.
+inline bool twist(const Ctx& c) {
+  if (!inRun()) return false;
+  if (!Game::castWard(run(), hereNow(c))) {
+    toast("NO WARD LEFT TONIGHT", UI::Dim);
+    return false;
   }
+  toast("HIDDEN: THE WARDENS CAN'T HEAR YOU");
+  save();
+  return true;
 }
 
 // Overheard: a pulse, or holding the Deck still on the glass, sometimes catches a
@@ -211,9 +242,24 @@ inline bool settleDue = false;                  // off long enough: the next sto
 inline float walkAtSettle = 0;                  // Motion::walkTotal at the last sure catch
 inline bool stopTried = false;                  // this stop has had its chance
 
-inline void noteOff(uint32_t minutes) {
+// The Deck was off for `minutes`, and `settled` wells finished settling meanwhile.
+inline void noteOff(uint32_t minutes, int settled) {
   if (minutes >= OffForSettle) settleDue = true;
-  teachToast(Taught::OffFor, "WELLS KEPT SETTLING WHILE IT WAS OFF");   // after the OFF FOR toast
+  char b[40];
+  if (minutes >= 60) snprintf(b, sizeof(b), "OFF FOR %luH %02luM", (unsigned long)(minutes / 60), (unsigned long)(minutes % 60));
+  else snprintf(b, sizeof(b), "OFF FOR %lu MIN", (unsigned long)minutes);
+  if (settled) {
+    const size_t k = strlen(b);
+    snprintf(b + k, sizeof(b) - k, ". %d %s SETTLED", settled, settled == 1 ? "WELL" : "WELLS");
+  }
+  toastAfter(b, 0, 3.0f);
+  if (settled) teachToast(Taught::OffFor, "WELLS KEEP SETTLING WHILE IT'S OFF");   // after the OFF FOR toast
+}
+
+// The Deck heard none of the routers it noted before it was switched off, so
+// it can't tell how long that was: wells still settling stay where they were.
+inline void noteOffUnknown(int settling) {
+  if (settling) toastAfter("COULDN'T TELL HOW LONG IT WAS OFF", UI::Dim, 3.0f);
 }
 
 inline bool walkedRecently(const Ctx& c) {
@@ -223,7 +269,7 @@ inline bool walkedRecently(const Ctx& c) {
 inline void stillHands(const Ctx& c) {
   if (c.motion.stillFor < 0.5f) stopTried = false;
   const bool listening = mode == Mode::Scanner || mode == Mode::Glass || mode == Mode::Well;
-  if (!listening || !c.gyro || stopTried || c.motion.stillFor <= StopStill || !c.motion.viewing()) return;
+  if (!listening || !c.gyro || !c.st.awake || stopTried || c.motion.stillFor <= StopStill || !c.motion.viewing()) return;
   const bool sure = settleDue || walkedRecently(c);
   if (!sure && mode != Mode::Glass) return;
   const bool caught = overhear(c, randomSeed ? randomSeed() : game.playMs * 2654435761u, false, sure);
@@ -253,12 +299,18 @@ inline void statusFromRun(const Ctx& c) {
   st.inRun = inRun();
   for (int e = 0; e < Game::EnergyN; e++) st.wellThirst[e] = 0;
   st.wellFocus = -1;
+  st.wellHeld = false;
   st.wellFavor = 0;
   st.wellGlyph = nullptr;
+  for (int e = 0; e < Game::EnergyN; e++) st.tonight[e] = (uint8_t)e;
+  st.faction = -1;
   st.glyph = glyphHere;
   st.adrift = adrift.on && adrift.scatter < 0;
   if (!st.inRun) { st.starId = 0; return; }
   const Game::Run& r = run();
+  // What each well gives tonight: Glitch shuffles Ember, Tide and Gale, and in a Static storm every well is Static.
+  for (int e = 0; e < Game::EnergyN; e++) st.tonight[e] = (uint8_t)Game::energyTonight(r, e);
+  if (r.challenge == 4) st.faction = Game::Hedge;   // as wellFaction() has it
   st.night = r.night;
   st.total = r.n.total;
   st.tithe = Game::effectiveTithe(r);
@@ -266,7 +318,6 @@ inline void statusFromRun(const Ctx& c) {
   st.coin = (int)r.coin;
   // The gauge on the Tithe bar: offerings to go, and the Portent notches.
   st.quiet = Game::deckQuiet(r);
-  st.more = Game::moreTonight(r, starValue);
   st.notches = st.quiet || r.n.met ? 0 : Game::portentNotches(r, st.notch);
   st.heat = r.heat;
   st.wardens = Game::wardensCanCome(r);
@@ -275,6 +326,8 @@ inline void statusFromRun(const Ctx& c) {
   if (mode == Mode::Well) {
     const Game::WellView w = currentView(c);
     const Game::Here h = hereNow(c);
+    const WellRec* wr = c.sky.byId(wellId);
+    st.wellHeld = wr && heldId == wr->id && wr->sig < Game::ReachDbm;
     // Your focus there tonight, and a favor you could take.
     if (Game::givesFocus(r, w) && Game::wellEnergy(r, w) != r.focus) st.wellFocus = r.focus;
     const Game::Job j = Game::jobOffer(r, w);
@@ -290,6 +343,8 @@ inline void statusFromRun(const Ctx& c) {
       if (Game::canSell(r, game.atlas, w, e) == Game::Why::Banned) { st.wellThirst[e] = -1; continue; }
       Game::Sale s;
       Game::saleContext(s, r, game.atlas, w, h, e);
+      if (r.n.omen == Cat::Omen_fade && e == r.n.fadeE) s.price *= 0.5;   // as the offering counts it (Rules.h score)
+      if (r.n.veil && e == Game::Static) s.price += 3;
       st.wellThirst[e] = (float)s.price;
     }
   }
@@ -312,22 +367,54 @@ inline void noteSeen() {
   if (game.shop.open) for (int i = 0; i < game.shop.nRelics; i++) Game::setBit(game.seen, game.shop.relics[i].id);
 }
 
+// Rank rises with Tithes paid: said the moment it does. -1 until the first frame
+// has seen where the career stands.
+inline int rankSeen = -1;
+inline void noticeRank() {
+  const int k = Game::rankIndex(game.career);
+  if (rankSeen >= 0 && k > rankSeen) {
+    char b[40];
+    snprintf(b, sizeof(b), "YOU ARE %s %s NOW", Game::RankNames[k][0] == 'O' ? "AN" : "A", Game::RankNames[k]);
+    toastAfter(b, UI::Accent, 3.0f);
+  }
+  if (k > rankSeen) rankSeen = k;
+}
+
+// The atlas forgot a well to make room: said once, the first time.
+inline void noticeAtlasFull() {
+  if (!Game::atlasForgot) return;
+  Game::atlasForgot = false;
+  teachHeld(Taught::AtlasFull, "ATLAS FULL: LEAST-VISITED WELLS FADE");
+}
+
 inline void update(const Ctx& c, const Press& p, float dt) {
   modeT += dt;
   noteSeen();
-  tickToast(dt);
+  tickToast(dt, c.st.awake);
   game.playMs += (uint32_t)(dt * 1000);
   Game::playMinNow = game.playMs / 60000;
   Game::runNow = &game.run;   // career counters read this week's Nights too
   Game::wellsNow = game.atlas.unique;
+  Game::bookNow = &game.wells;
   tickTunes(dt);
   Tune rhythm{};
   if (tickStray(c, dt, rhythm)) playTune(rhythm);
   tickRibbon(c, dt);
   if (tickRecap(c, dt, rhythm)) playTune(rhythm);
   stillHands(c);
+  if (mode != Mode::Boot) { noticeRank(); noticeAtlasFull(); }
   if (!recap.card) showHeld(c);
-  if (inRun() && Game::leak(run(), game.playMs)) save();
+  if (inRun()) {   // the hold leaks a unit every 15 minutes: say so
+    int e = -1;
+    const int lost = Game::leak(run(), game.playMs, &e);
+    if (lost) {
+      char b[40];
+      if (lost == 1) snprintf(b, sizeof(b), "1 %s LEAKED FROM YOUR HOLD", energyWord(e));
+      else snprintf(b, sizeof(b), "%d UNITS LEAKED FROM YOUR HOLD", lost);
+      toastAfter(b, UI::Text);
+      save();
+    }
+  }
   // The hint star: after each scan or sale, and at least once a second (the
   // build or the hold may have changed).
   starCacheAge += dt;
@@ -346,16 +433,9 @@ inline void update(const Ctx& c, const Press& p, float dt) {
   // Keys that work on the scanner's screens.
   const bool scannerish = mode == Mode::Scanner || mode == Mode::Glass || mode == Mode::Well || mode == Mode::Walk;
   if (scannerish) {
-    if (p.tab && hooks.setPlace) {
-      const int place = ((int)c.st.place + 1) % (int)WalkFormat::Place::Count;
-      hooks.setPlace(place);
-      if (mode == Mode::Glass || mode == Mode::Well) {   // the scanner and the walk log show the place; these don't
-        char b[24];
-        snprintf(b, sizeof(b), "PLACE: %s", WalkFormat::placeLabel((WalkFormat::Place)place));
-        toast(b, UI::Accent);
-      }
-    }
-    if (p.ch == 'r' && hooks.toggleRecording) hooks.toggleRecording();
+    // The walk log's own keys: the place tag and recording, which starts at power-on.
+    if (mode == Mode::Walk && p.tab && hooks.setPlace) hooks.setPlace(((int)c.st.place + 1) % (int)WalkFormat::Place::Count);
+    if (mode == Mode::Walk && p.ch == 'r' && hooks.toggleRecording) hooks.toggleRecording();
     if (p.ch == 'm') {
       c.st.muted = !c.st.muted;
       if (hooks.setMuted) hooks.setMuted(c.st.muted);
@@ -364,7 +444,7 @@ inline void update(const Ctx& c, const Press& p, float dt) {
   }
   if (!recapPress(c, p)) switch (mode) {
     case Mode::Boot:
-      if (modeT > BootScreen::Length || p.any) resume();
+      if (modeT > BootScreen::Length || p.any) resume(c.st.battery);
       break;
     case Mode::Scanner: {
       listMode = Mode::Scanner;

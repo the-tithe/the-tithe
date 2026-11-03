@@ -27,6 +27,7 @@ TITHES = [410, 900, 2200, 4700, 9000, 17500, 26000]
 if os.environ.get("TITHES"):          # set by tune_tithes.py (worker processes read it on import)
     TITHES = [float(x) for x in os.environ["TITHES"].split(",")]
 OVERNIGHT_GROWTH = 2.0
+OVERNIGHT_ACCEL = 0.5      # each Overnight Night grows 0.5 more than the last
 OP_RATIO = 3.0             # a win is "overpowered" if the build reached this many times the Tithe...
 OP_HOLD = 2.0              # ...and never dropped below this many times it for the rest of the week
 START_COIN = 4
@@ -50,6 +51,13 @@ PORTENT_CHOICE_BELOW = 3   # below this Pact the dawn offers two Portents and th
 ATTUNE_PRICE = float(os.environ.get("ATTUNE_PRICE", 0))   # Price per Attunement level
 ATTUNE_MULT = float(os.environ.get("ATTUNE_MULT", 1))     # Mult per Attunement level
 RARE_GROWTH, UNCOMMON_GROWTH, EDITION_GROWTH = 0.03, 0.01, 0.25   # per Night: better stock as the week goes on
+IRON_STEEP = (1.25, 1.5, 1.75)   # Iron: Nights 5, 6 and 7 (and Overnight) ask this many times more
+ASH_TIRE = 0.7                   # Ash: the same energy as the offering before, tonight, pays this × Thirst
+MULT_SLOT = False                # from the second stall, one shelf relic always multiplies (before Nov 2026)
+MULT_KEEP = 0.35                 # a multiplier rolled for a plain slot stays with this chance
+GROWER_PULL = 0.25               # chance a plain shelf roll becomes a growing relic of its rarity
+GROWING_RELICS = {"tally_stick", "ritual_candle", "patience", "pilgrims_staff", "black_ledger", "picket_fence",
+                  "piggy_bank", "locked_diary", "pedometer", "mixtape", "rain_gauge", "prism_jar", "seed_vault"}
 WARDEN_BLOCK = 0.15
 MERCY = os.environ.get("MERCY", "1") == "1"   # the Collector's mercy after a close call
 CANDLES = [4, 6, 8]        # coin for each extra visit when a Night runs out short of the Tithe
@@ -224,8 +232,8 @@ def make_visit(r, rng, vi, nx, loc=None):
         units *= 1.2
     if r["calling"] == "courier":
         units *= 1.4
-    if pact_on(r, 3):
-        units *= 0.9
+    if pact_on(r, 3) and r["kinds_tonight"] and e == r["last_e"]:   # Ash: the same energy twice in a row
+        price *= ASH_TIRE
     om = nx["omen"]
     if om == "low_tide":
         units *= 0.75
@@ -331,7 +339,11 @@ def night_setup(r, rng, night, omen=None, eclipse=None):
 
 
 def tithe_for(r, night, omen, eclipse):
-    t = TITHES[night] if night < NIGHTS else TITHES[-1] * OVERNIGHT_GROWTH ** (night - NIGHTS + 1)
+    t = TITHES[night] if night < NIGHTS else TITHES[-1]
+    for k in range(night - NIGHTS + 1):   # Overnight: x2, then x2.5, x3... (each Night steeper than the last)
+        t *= OVERNIGHT_GROWTH + OVERNIGHT_ACCEL * k
+    if pact_on(r, 2) and night >= 4:   # Iron: the last three Nights ask more
+        t *= IRON_STEEP[min(night, 6) - 4]
     if owned(r, "blood_moon"):
         t *= 1.35
     if omen == "blood_price":
@@ -370,7 +382,8 @@ def cast(r, sp, nx):
         plain = [x for x in r["relics"] if not x["ed"]]
         if plain:
             rng.choice(plain)["ed"] = rng.choice(["gilt", "lit", "prismatic"])
-    elif sp == "augur":
+    elif sp == "augur":   # the Omen goes, with the visits and Tithe it took (play_night undoes them)
+        nx["augured"] = nx["omen"]
         nx["omen"] = None
     elif sp == "recall" and r["last_spell"]:
         r["spells"].append(r["last_spell"])
@@ -394,7 +407,7 @@ def play_night(r, rng, night, tithe, nx, full=False):
     r["night"] = night
     sk = SKILLS[r["skill"]]
     visits = (10 if r["calling"] == "courier" else VISITS) + ("extra_breath" in r["mods"]) + \
-        ("second_wind" in r["mods"]) - 2 * owned(r, "overclock") - pact_on(r, 2)
+        ("second_wind" in r["mods"]) - 2 * owned(r, "overclock")
     if nx["omen"] == "short_night":
         visits -= 2
     if nx["eclipse"] == "dark":
@@ -404,8 +417,14 @@ def play_night(r, rng, night, tithe, nx, full=False):
         if "chalk_pouch" in r["trinkets"] and len(r["spells"]) < spell_slots(r):
             r["spells"].append("chalk")
         for sp in list(r["spells"]):
-            if sp in START_SPELLS or (sp == "augur" and nx["omen"]) or (sp == "veil" and owned(r, "black_ledger")):
+            # AUGUR can't call off a Wardens walk: its Heat can't be put back
+            if sp in START_SPELLS or (sp == "augur" and nx["omen"] and nx["omen"] != "wardens_walk") or \
+                    (sp == "veil" and owned(r, "black_ledger")):
                 cast(r, sp, nx)
+        if nx.get("augured") == "short_night":
+            visits += 2
+        if nx.get("augured") == "blood_price":
+            tithe = nx["tithe_unomened"]
     r["_ids"] = {x["id"] for x in r["relics"]}
     r["_slots"], r["_used"] = relic_slots(r), slots_used(r)
     total, coin, met_at, best_sale, vi, candles = 0.0, 0.0, None, 0.0, 0, 0
@@ -451,6 +470,14 @@ def play_night(r, rng, night, tithe, nx, full=False):
             res *= 3
         r["transmute_left"] = max(0, r["transmute_left"] - 1)
         # bookkeeping
+        if owned(r, "mixtape") and r["last_e"] is not None and c["e"] != r["last_e"]:
+            r["state"]["mixtape"] = r["state"].get("mixtape", 0) + 3.0 * GROW
+        if owned(r, "prism_jar") and c["e"] not in r["kinds_tonight"]:
+            r["state"]["prism_jar"] = r["state"].get("prism_jar", 0) + 0.3 * GROW
+        if owned(r, "pedometer"):
+            r["state"]["pedometer"] = r["state"].get("pedometer", 0) + 0.9 * GROW
+        if owned(r, "rain_gauge"):   # the simulator's visit is a draw and an offering
+            r["state"]["rain_gauge"] = r["state"].get("rain_gauge", 0) + 1.5 * GROW
         r["last_e"] = c["e"]
         r["sales"] += 1
         r["kinds_tonight"].add(c["e"])
@@ -462,14 +489,14 @@ def play_night(r, rng, night, tithe, nx, full=False):
             r["new_wells"] += 1
             r["new_tonight"] = r.get("new_tonight", 0) + 1
             if owned(r, "pilgrims_staff"):
-                st["pilgrims_staff"] = st.get("pilgrims_staff", 0) + 0.05
+                st["pilgrims_staff"] = st.get("pilgrims_staff", 0) + 0.15
         if c["hidden"] and owned(r, "locked_diary"):
-            st["locked_diary"] = st.get("locked_diary", 0) + 0.15
+            st["locked_diary"] = st.get("locked_diary", 0) + 0.45
         if c["faction"] == "hearth" and owned(r, "picket_fence"):
-            st["picket_fence"] = st.get("picket_fence", 0) + 0.25
+            st["picket_fence"] = st.get("picket_fence", 0) + 0.75
         if c["e"] == "static":
             if owned(r, "black_ledger"):
-                st["black_ledger"] = st.get("black_ledger", 0) + 0.2
+                st["black_ledger"] = st.get("black_ledger", 0) + 0.6
             if not (owned(r, "static_eater") or r["veil"]):
                 r["heat"] = min(4.0, r["heat"] + 0.5)
             r["standing"]["warded"] -= 2
@@ -509,7 +536,7 @@ def play_night(r, rng, night, tithe, nx, full=False):
     r.pop("_ids", None)
     used = met_at or visits
     return dict(paid=met_at is not None, total=total, used=used, visits=visits, coin=coin, best=best_sale,
-                candles=candles)
+                candles=candles, tithe=tithe)
 
 
 def snapshot(r):
@@ -554,7 +581,8 @@ def roll_relic(r, rng, rarity=None, multiplier=False):
     schools = {K.RELICS[x["id"]]["school"] for x in r["relics"]}
     pool = sorted(k for k in r["unlocked"] if k in K.RELICS and K.RELICS[k]["rarity"] == rarity
                   and k not in have and not K.RELICS[k]["legendary"]
-                  and (not multiplier or K.RELICS[k]["phase"] in (2, 3)))
+                  and (not multiplier or K.RELICS[k]["phase"] in (2, 3))
+                  and not (r["calling"] == "pilgrim" and k.endswith("_caller") and k != r["focus"] + "_caller"))
     if multiplier and not pool:
         return roll_relic(r, rng, "uncommon" if rarity == "common" else None, True) if rarity == "common" else None
     if not pool:
@@ -569,23 +597,32 @@ def roll_relic(r, rng, rarity=None, multiplier=False):
         fit = [k for k in pool if K.RELICS[k]["suits"] == "all" or mine & set(K.RELICS[k]["suits"].split())]
         pool = fit or pool
     k = rng.choice(pool)
+    if not multiplier and K.RELICS[k]["phase"] in (2, 3) and rng.random() > MULT_KEEP:
+        plain = [x for x in pool if K.RELICS[x]["phase"] < 2]   # a multiplier turned away: something that adds
+        if plain:
+            k = rng.choice(plain)
+    if not multiplier and rng.random() < GROWER_PULL:   # the Collector stocks what grows
+        grow = [x for x in pool if x in GROWING_RELICS]
+        if grow:
+            k = rng.choice(grow)
     ed = None
     ed_mult = (3 if "collectors_eye" in r["trinkets"] else 1) * (3 if r["calling"] == "collector" else 1)
-    if "shine" in r["shop_flags"]:
-        ed = rng.choice(["gilt", "lit", "prismatic"])
-        r["shop_flags"].discard("shine")
-    else:
-        for name, (_, _, p) in K.EDITIONS.items():
-            if rng.random() < p * ed_mult * (1 + EDITION_GROWTH * r["night"]):
-                ed = name
-                break
+    for name, (_, _, p) in K.EDITIONS.items():   # a Shine Portent waits for the stall's shelf (shop)
+        if rng.random() < p * ed_mult * (1 + EDITION_GROWTH * r["night"]):
+            ed = name
+            break
     return rel(k, ed, 3 if (pact_on(r, 4) and rng.random() < 0.3) else None)
+
+
+def relic_price(r, item):
+    """A relic's full price; selling one back pays half of this, whatever the stall's discounts."""
+    return (PRICE[K.RELICS[item["id"]]["rarity"]] + (PRICE["edition"] if item["ed"] else 0)
+            + (r["calling"] in ("collector", "chorus")))
 
 
 def cost(r, kind, item=None):
     if kind == "relic":
-        p = PRICE[K.RELICS[item["id"]]["rarity"]] + (PRICE["edition"] if item["ed"] else 0)
-        p += r["calling"] in ("collector", "chorus")
+        p = relic_price(r, item)
     else:
         p = PRICE[kind]
     if "clearance" in r["mods"]:
@@ -595,8 +632,10 @@ def cost(r, kind, item=None):
     return max(1, p)
 
 
-GROWTH = {"tally_stick": 1.0, "ritual_candle": 0.15, "patience": 6.0, "pilgrims_staff": 0.2,
-          "black_ledger": 0.2, "picket_fence": 0.75, "piggy_bank": 1.0, "locked_diary": 0.15,
+GROW = float(os.environ.get("GROW", 1))   # the new growing relics' steps, times this (tuning)
+GROWTH = {"pedometer": 4.5, "mixtape": 7.5, "rain_gauge": 6.0, "prism_jar": 0.75, "seed_vault": 1.2,
+          "tally_stick": 3.0, "ritual_candle": 0.45, "patience": 18.0, "pilgrims_staff": 0.6,
+          "black_ledger": 0.6, "picket_fence": 2.25, "piggy_bank": 3.0, "locked_diary": 0.45,
           "long_receipt": 0.2}   # expected gain per Night, for the bot's lookahead
 
 
@@ -626,18 +665,24 @@ def shop(r, rng, night):
     reroll_cost = (8 if pact_on(r, 5) else REROLL) - 2 * ("liquidation" in r["mods"]) + 2 * (r["calling"] == "night_clerk")
 
     def offers_now(first):
-        offs = [roll_relic(r, rng) for _ in range(n_rel - 1)]
-        offs.append(roll_relic(r, rng, multiplier=True) if night >= 1 else roll_relic(r, rng))
-        if night == 0 and first:   # the first shop always has a Caller for your focus energy
-            offs[0] = rel(r["focus"] + "_caller")
-        if "rare_sight" in r["shop_flags"]:
-            offs[-1] = roll_relic(r, rng, "rare")
+        caller = night == 0 and first   # the first shop always has a Caller for your focus energy
+        offs = [rel(r["focus"] + "_caller")] if caller else []
+        offs += [roll_relic(r, rng) for _ in range(n_rel - 1 - len(offs))]
+        offs.append(roll_relic(r, rng, multiplier=True) if night >= 1 and MULT_SLOT else roll_relic(r, rng))
+        if "rare_sight" in r["shop_flags"]:   # a rare on top of the usual shelf
+            offs.append(roll_relic(r, rng, "rare"))
             r["shop_flags"].discard("rare_sight")
         seen, out = set(), []
         for o in offs:
             if o and not owned(r, o["id"]) and o["id"] not in seen:
                 seen.add(o["id"])
                 out.append(o)
+        if first and "shine" in r["shop_flags"]:   # the Shine Portent: on a relic that stays, never the Caller
+            r["shop_flags"].discard("shine")
+            cands = [o for o in out if not (caller and o["id"] == r["focus"] + "_caller")]
+            plain = [o for o in cands if not o["ed"]]
+            if cands:
+                rng.choice(plain or cands)["ed"] = rng.choice(["gilt", "lit", "prismatic"])
         return out
 
     offers = offers_now(True)
@@ -652,10 +697,13 @@ def shop(r, rng, night):
         r["attune"][r["focus"]] = r["attune"].get(r["focus"], 0) + 1
     cons = rng.choices(list(CONSUMABLE_W), list(CONSUMABLE_W.values()),
                        k=SHOP_CONSUMABLES + ("night_market" in r["mods"]))
-    tpool = sorted(t for t in K.TRINKETS if t in r["unlocked"] and t not in r["trinkets"])
+    tpool = sorted(t for t in K.TRINKETS if t in r["unlocked"] and t not in r["trinkets"]
+                   and not (t == "moneylender" and pact_on(r, 6)))   # no loans from OBSIDIAN up
     trinket = rng.choice(tpool) if tpool and rng.random() < TRINKET_OFFER_P else None
-    tier2 = sorted(m for m, v in K.MODS.items() if v[2] and v[2] in r["mods"] and m not in r["mods"])
-    tier1 = sorted(m for m, v in K.MODS.items() if not v[2] and m not in r["mods"])
+    useless = {"sixth_socket", "lodestone"} if r["calling"] == "pilgrim" else set()   # 4 slots, and all focus
+    tier2 = sorted(m for m, v in K.MODS.items() if v[2] and (v[2] in r["mods"] or v[2] in useless)
+                   and m not in r["mods"] and m not in useless)
+    tier1 = sorted(m for m, v in K.MODS.items() if not v[2] and m not in r["mods"] and m not in useless)
     mod = rng.choice(tier2 + tier1) if (tier2 or tier1) else None
 
     smp = sk["samples"]
@@ -694,7 +742,7 @@ def shop(r, rng, night):
             if best_drop is not None:
                 r["relics"].remove(best_drop)
                 gone = best_drop
-                back = cost(r, "relic", gone)
+                back = relic_price(r, gone)
                 r["coin"] += back if "pawn_ticket" in r["trinkets"] else back // 2
                 r["stats"]["relics_sold"] += 1
             r["relics"].append(best)
@@ -745,7 +793,7 @@ def shop(r, rng, night):
                     r["stats"]["attunes_run"] += 1
                 cons.remove(item)
             elif item == "spell" and len(r["spells"]) < spell_slots(r):
-                pool = sorted(s for s in K.SPELLS if s in r["unlocked"])
+                pool = sorted(s for s in K.SPELLS if s in r["unlocked"] and not (s == "transmute" and r["calling"] == "pilgrim"))
                 r["coin"] -= p
                 r["spells"].append(rng.choices(pool, [K.SPELLS[s][4] for s in pool])[0])
                 cons.remove(item)
@@ -772,6 +820,7 @@ def shop(r, rng, night):
 
 
 PORTENT_W = [3, 2, 3, 2, 2, 2, 2, 2, 2, 0.3]
+FLAG_PORTENTS = ("rare_sight", "free_rerolls", "shine", "doubled_interest")   # a second at one dawn would do nothing
 
 
 def portent_value(r, p):
@@ -785,15 +834,24 @@ def portent_value(r, p):
             "scroll": 10 if len(r["spells"]) < spell_slots(r) else 0, "chalk_mark": 3}[p]
 
 
-def apply_portent(r, rng, choose=False):
+def roll_portent(r, rng, rolled, avoid=()):
+    """A Portent at random (Game.h rollPortent): never a stall Portent already rolled at this
+    dawn, nor a Conjunction with no legendary left to give."""
     names = list(K.PORTENTS)
-    p = rng.choices(names, PORTENT_W)[0]
+    legends = [k for k in r["unlocked"] if k in K.RELICS and K.RELICS[k]["legendary"] and not owned(r, k)]
+    w = [0 if p in avoid or (p in FLAG_PORTENTS and p in rolled)
+         or (p == "conjunction" and len(legends) <= rolled.count("conjunction")) else wt
+         for p, wt in zip(names, PORTENT_W)]
+    p = rng.choices(names, w if sum(w) > 0 else PORTENT_W)[0]
+    rolled.append(p)
+    return p
+
+
+def apply_portent(r, rng, choose=False, rolled=None):
+    rolled = [] if rolled is None else rolled
+    p = roll_portent(r, rng, rolled)
     if choose:   # one of two: the dawn offers another and the player keeps the one worth more
-        q = rng.choices(names, PORTENT_W)[0]
-        for _ in range(8):
-            if q != p:
-                break
-            q = rng.choices(names, PORTENT_W)[0]
+        q = roll_portent(r, rng, rolled, avoid=(p,))
         if portent_value(r, q) > portent_value(r, p):
             p = q
     if p == "windfall":
@@ -850,16 +908,19 @@ def play_run(args):
             ecl = None
         r["stats"]["omens_seen"] += omen is not None
         tithe = tithe_for(r, night, omen, ecl)
+        unomened = tithe_for(r, night, None, ecl)   # for an AUGUR cast on a Blood price
         r["owed"] = 0.0
         if in_week:
             out["ratios"].append(power(r, rng, night, omen, ecl) / tithe)
         nx = night_setup(r, rng, night, omen, ecl)
+        nx["tithe_unomened"] = unomened
         res = play_night(r, rng, night, tithe, nx)
+        tithe = res["tithe"]   # AUGUR may have cleared a Blood price
         if in_week:
             out["used"].append(res["used"])
         paid = res["paid"]
         if paid and owned(r, "patience"):
-            r["state"]["patience"] = r["state"].get("patience", 0) + (res["visits"] - res["used"])
+            r["state"]["patience"] = r["state"].get("patience", 0) + 3 * (res["visits"] - res["used"])
         if not paid and in_week and night < NIGHTS - 1 and r["loans_left"] > 0 and not pact_on(r, 6) \
                 and res["total"] >= tithe * LOAN_FLOOR:
             r["loans_left"] -= 1
@@ -876,7 +937,7 @@ def play_run(args):
                 out["fails_at"] = night + 1
             break
         r["stats"]["nights_paid"] += 1
-        for k, step in (("tally_stick", 1.0), ("ritual_candle", 0.15)):
+        for k, step in (("tally_stick", 3.0), ("ritual_candle", 0.45)):
             if owned(r, k):
                 r["state"][k] = r["state"].get(k, 0) + step
         spare = res["visits"] - res["used"]
@@ -896,22 +957,27 @@ def play_run(args):
             cap *= 2
         interest = min(cap, int(r["coin"] // INTEREST_PER))
         if owned(r, "piggy_bank"):
-            r["state"]["piggy_bank"] = r["state"].get("piggy_bank", 0) + 0.5 * interest
+            r["state"]["piggy_bank"] = r["state"].get("piggy_bank", 0) + 1.5 * interest
+        if owned(r, "seed_vault"):
+            r["state"]["seed_vault"] = r["state"].get("seed_vault", 0) + 0.3 * interest * GROW
         gilt = 2 * sum(1 for x in r["relics"] if x["ed"] == "gilt")
         thread = 4 if ("golden_thread" in r["trinkets"] and spare >= 4) else 0
         skim = min(10, max(0, int((res["total"] / tithe - 1) / 0.5))) if "tithe_skimmer" in r["trinkets"] else 0
         reward = 0 if pact_on(r, 1) else NIGHT_REWARD   # Lead: the Tithe pays no coin
         r["coin"] = max(0, r["coin"] + int(res["coin"]) + spare + reward + interest + gilt + thread + skim)
-        for _ in range(sum(spare >= a for a in PORTENT_AT)):
-            apply_portent(r, rng, choose=r["pact"] < PORTENT_CHOICE_BELOW)
-        if "double_interest" in r["shop_flags"]:    # Doubled interest: tonight's interest pays again
-            r["shop_flags"].discard("double_interest")
-            r["coin"] += interest
-        for x in list(r["relics"]):
+        for x in list(r["relics"]):   # withered relics count down before the dawn's own relics arrive
             if x["withered"] is not None:
                 x["withered"] -= 1
                 if x["withered"] <= 0:
                     r["relics"].remove(x)
+        rolled = []
+        for _ in range(sum(spare >= a for a in PORTENT_AT)):
+            apply_portent(r, rng, choose=r["pact"] < PORTENT_CHOICE_BELOW, rolled=rolled)
+        if "double_interest" in r["shop_flags"]:    # Doubled interest: tonight's interest pays again
+            r["shop_flags"].discard("double_interest")
+            r["coin"] += interest
+            if owned(r, "piggy_bank"):   # interest earned, doubled or not
+                r["state"]["piggy_bank"] = r["state"].get("piggy_bank", 0) + 1.5 * interest
         if night == NIGHTS - 1:
             out["won"] = True
             rs = out["ratios"]

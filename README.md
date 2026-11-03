@@ -21,12 +21,13 @@ There's more under the game than the manual tells you.
 You don't need to build anything or flash the Cardputer. The Tithe runs from M5Launcher, so it
 sits next to whatever else you have installed.
 
-1. Download `Tithe-v0.6.0.bin` from the [Releases page](https://github.com/the-tithe/the-tithe/releases).
-2. Copy it to the `/downloads` folder on the Cardputer's microSD card.
+1. Download `Tithe-v0.6.1.bin` from the [Releases page](https://github.com/the-tithe/the-tithe/releases).
+2. Copy it to the `/downloads` folder on the Cardputer's microSD card. The card must be FAT32.
 3. Put the card back in, open M5Launcher, choose SD, and launch the file from `/downloads`.
 
 Leave the card in while you play. The Deck keeps a backup of your save on it, and it's where the
-walk log goes.
+walk log goes. The same file works in M5Burner, or with esptool at `0x0`, though either of those
+replaces everything on the Cardputer, M5Launcher included.
 
 The game is made for the Cardputer ADV, which has the motion sensor that dowsing and the hand
 gestures use. On the original Cardputer everything else works and those moves are switched off.
@@ -54,7 +55,8 @@ pio run -e cardputer      # build the firmware
 pio test -e native        # run every test on your computer
 ```
 
-`pio run -e cardputer -t upload` flashes it over USB, which replaces whatever is on the Cardputer,
+`tools/release_image.sh` builds the release file, a full image with the partition table that
+gives the game its own save area. `pio run -e cardputer -t upload` flashes it over USB, which replaces whatever is on the Cardputer,
 so use M5Launcher unless you mean to do that. [firmware/README.md](firmware/README.md) has the
 details, including how to back up the Cardputer first.
 

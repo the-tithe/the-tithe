@@ -3,10 +3,9 @@
 
 // Night-sized numbers, worked out from what the engine already knows: how many
 // more offerings tonight needs, where the Portent thresholds land on the Tithe
-// bar, what a stall's star is worth in offerings a Night, the Omen the stall
-// can see, and what each well in the atlas would pay now. All display: nothing
-// here changes a rule. From the quiet rung (Run.h deckQuiet) the Deck keeps
-// these to itself.
+// bar, the Omen the stall can see, and what each well in the atlas would pay
+// now. All display: nothing here changes a rule. From the quiet rung (Run.h
+// deckQuiet) the Deck keeps these to itself.
 
 namespace Game {
 
@@ -72,37 +71,6 @@ inline bool seesAhead(const Run& r) { return isCalling(r, Cat::Calling_diviner);
 // The Night ahead's Tithe as the stall knows it: with its Omen once that shows.
 inline double titheAhead(const Run& r) {
   return titheFor(r, r.night, stallOmen(r), r.night == Nights - 1 ? r.eclipse : -1);
-}
-
-// What one offering makes with the build as it stands: your recent offerings
-// scored again (a typical one before there are any).
-inline double perOffering(const Run& r, const RecentSales& mem) {
-  return recentPower(r, mem) / (mem.n ? mem.n : 6);
-}
-
-// How many fewer offerings a Night a gain of `gain` (0.5 is half again) is
-// worth, against a Tithe of `tithe` at `per` Resonance an offering.
-inline double fewerOfferings(double gain, double tithe, double per) {
-  if (gain <= 0 || per <= 0 || tithe <= 0) return 0;
-  const double now = tithe / per;
-  return now - now / (1 + gain);
-}
-
-// "~1 FEWER OFFERING A NIGHT": one decimal under one, halves above.
-inline const char* fewerText(double fewer, char* b, int cap) {
-  if (fewer < 0.95) {
-    snprintf(b, cap, "~%.1f FEWER OFFERINGS A NIGHT", fewer < 0.1 ? 0.1 : fewer);
-    return b;
-  }
-  const double h = round(fewer * 2) / 2;
-  if (h == 1) snprintf(b, cap, "~1 FEWER OFFERING A NIGHT");
-  else snprintf(b, cap, "~%.3g FEWER OFFERINGS A NIGHT", h);
-  return b;
-}
-
-// What the stall's star is worth in offerings a Night, 0 with no star.
-inline double starFewer(const Shop& s, const Run& r, const RecentSales& mem) {
-  return fewerOfferings(starGain(s, r, mem), titheAhead(r), perOffering(r, mem));
 }
 
 // ---- The atlas -------------------------------------------------------------------------

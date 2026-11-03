@@ -103,7 +103,7 @@ enum class Reach : uint8_t { Faint, Far, Near, InReach };
 
 inline Reach reachOf(float dbm) {
   if (dbm >= -55) return Reach::InReach;
-  if (dbm >= -67) return Reach::Near;
+  if (dbm >= -70) return Reach::Near;   // Game::ReachDbm
   if (dbm >= WellRules::FaintDbm) return Reach::Far;
   return Reach::Faint;
 }

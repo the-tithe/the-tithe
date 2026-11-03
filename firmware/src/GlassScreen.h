@@ -154,10 +154,11 @@ inline void draw(Canvas& g, const Sightings& sky, const Motion& m, const Status&
     place(w, m, st, t, x, y);
     wx[nw] = x;
     wy[nw++] = y;
-    uint16_t c = UI::energyColor(w.energy);
+    const Energy te = st.tonightOf(w.energy);   // what it gives tonight
+    uint16_t c = UI::energyColor(te);
     if (!sky.inRange(w)) c = UI::dimmed(c);
     if (w.energy == Energy::Hush && st.hushReveal < 1) c = UI::dimmed(c);
-    UI::energyGlyph(g, (int)x - 3, (int)y - 3, w.energy, c);
+    UI::energyGlyph(g, (int)x - 3, (int)y - 3, te, c);
     if (pinned(w, st.nowMs)) {   // a tick on the rim toward a dowsed well
       const float a = Motion::wrap(w.bearing - m.heading);
       g.drawLine(Cx + (int)((R - 3) * sinf(a)), Cy - (int)((R - 3) * cosf(a)), Cx + (int)((R + 4) * sinf(a)),

@@ -11,7 +11,7 @@
 
 namespace App {
 
-enum class Taught : uint8_t { Glyph, Namesake, Find, Token, Mercy, Favor, Recap, Street, OffFor, Count };
+enum class Taught : uint8_t { Glyph, Namesake, Find, Token, Mercy, Favor, Recap, Street, OffFor, AtlasFull, Count };
 static_assert((int)Taught::Count <= 16, "Moments::taught has sixteen bits");
 
 inline void holdNote(const char* s, uint16_t c, bool follows = false);   // Finds.h

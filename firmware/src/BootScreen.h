@@ -12,6 +12,11 @@ struct Info {
   bool card;      // SD card mounted
   bool ears;      // WiFi radio started
   bool balance;   // motion sensor (Cardputer ADV only)
+  // The Deck's key was just made. Expected on a first boot; with a save to load
+  // it means every well the save knows now reads as a stranger.
+  bool keysNew = false;
+  bool keysLost = false;
+  const char* cardWord = nullptr;   // the card's state in a word (SDCard::word), else from `card`
 };
 
 // Draws the arc of a circle from angle 0 to `frac` of a full turn.
@@ -69,10 +74,10 @@ inline void draw(Canvas& g, float t, const Info& info) {
 
   struct Line { const char* label; const char* value; bool ok; };
   const Line lines[] = {
-    {"KEYS", "SEALED", true},
-    {"GRIMOIRE", info.card ? "SD OK" : "NO CARD", info.card},
+    {"KEYS", info.keysNew ? "NEW" : "SEALED", !info.keysLost},
+    {"GRIMOIRE", info.cardWord ? info.cardWord : info.card ? "SD OK" : "NO CARD", info.card},
     {"EARS", info.ears ? "OPEN" : "DEAF", info.ears},
-    {"BALANCE", info.balance ? "TRUE" : "NONE", info.balance},
+    {"BALANCE", info.balance ? "TRUE" : "NONE", true},
   };
   const int x = 118;
   if (t > 0.1f) {   // the game's title, and under it the firmware's version
@@ -85,7 +90,9 @@ inline void draw(Canvas& g, float t, const Info& info) {
     const int y = 46 + i * 12;
     UI::text(g, x, y, ">", UI::Dim);
     UI::text(g, x + 12, y, lines[i].label, UI::Text);
-    if (t > at + 0.2f) UI::textRight(g, UI::W - 6, y, lines[i].value, lines[i].ok ? UI::Accent : UI::Rec);
+    // No motion sensor isn't a fault: the Deck plays without the moves.
+    const uint16_t vc = !lines[i].ok ? UI::Rec : i == 3 && !info.balance ? UI::Dim : UI::Accent;
+    if (t > at + 0.2f) UI::textRight(g, UI::W - 6, y, lines[i].value, vc);
   }
   if (t > 1.75f) {
     const int y = 46 + 4 * 12 + 6;
@@ -95,6 +102,16 @@ inline void draw(Canvas& g, float t, const Info& info) {
     snprintf(b, sizeof(b), "LISTENING%.*s", dots, "...");
     UI::text(g, x + 12, y, b, UI::Accent);
   }
+}
+
+// The boot stops here: the save can't be loaded and mustn't be written over.
+inline void drawStop(Canvas& g, const char* what, const char* todo) {
+  g.fillSprite(UI::Bg);
+  UI::textCenter(g, 20, "THE TITHE", UI::SelText, 2);
+  UI::textCenter(g, 40, Config::Version, UI::Dim);
+  UI::textCenter(g, 62, what, UI::Rec);
+  UI::textCenter(g, 76, todo, UI::Text);
+  UI::textCenter(g, 98, "THE SAVE IS KEPT AS IT IS", UI::Dim);
 }
 
 } // namespace BootScreen

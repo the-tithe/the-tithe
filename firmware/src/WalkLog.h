@@ -43,8 +43,13 @@ inline uint32_t nextWalkNumber() {
   return best + 1;
 }
 
+inline void lost();
+inline void back();
+
 // Starts a new walk. It opens its file at the first scan.
 inline void start() {
+  SDCard::onLost = lost;
+  SDCard::onBack = back;
   if (!SDCard::ensure()) { state = Status::Log::NoCard; return; }
   walk = nextWalkNumber();
   Persist::setLastWalk(walk);
@@ -64,23 +69,35 @@ inline void stop() {
   if (state == Status::Log::On) state = Status::Log::Off;
 }
 
-inline void fail() {
+// The card went: the file is closed and the walk stops recording.
+inline void lost() {
   closeFile();
-  SDCard::markFailed();
   pendingOpen = false;
+  if (state == Status::Log::On) state = Status::Log::Failed;
+}
+
+inline void fail(const char* what) {
+  SDCard::noteFailure(what);
+  lost();
   state = Status::Log::Failed;
+  SDCard::markFailed();
+}
+
+// The card came back after failing: the walk picks up as a new one.
+inline void back() {
+  if (state == Status::Log::Failed) start();
 }
 
 inline bool put(const char* s, int n) {
   if (n <= 0) return true;
-  if (fwrite(s, 1, (size_t)n, file) != (size_t)n) { fail(); return false; }
+  if (fwrite(s, 1, (size_t)n, file) != (size_t)n) { fail("walk log write"); return false; }
   bytes += (uint32_t)n;
   return true;
 }
 
 // Pushes everything written so far onto the card. False if the card failed.
 inline bool sync() {
-  if (fflush(file) != 0 || fsync(fileno(file)) != 0) { fail(); return false; }
+  if (fflush(file) != 0 || fsync(fileno(file)) != 0) { fail("walk log sync"); return false; }
   return true;
 }
 
@@ -90,7 +107,7 @@ inline bool ensureOpen() {
   snprintf(path, sizeof(path), "/sd/deck/walks/W%04lu.CSV", (unsigned long)walk);
   file = fopen(path, "w");
   pendingOpen = false;
-  if (!file) { fail(); return false; }
+  if (!file) { fail("walk log open"); return false; }
   char buf[256];
   return put(buf, WalkFormat::header(buf, sizeof(buf), Config::Version, Keys::deckTag(), walk));
 }

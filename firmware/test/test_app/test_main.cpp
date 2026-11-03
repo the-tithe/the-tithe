@@ -45,11 +45,12 @@ static void reboot() {
   Game::SaveFormat::encode(App::game, buf);
   memset(&App::game, 0xA5, sizeof(App::game));
   TEST_ASSERT_EQUAL((int)Game::SaveFormat::Load::Ok, (int)Game::SaveFormat::decode(buf, sizeof(buf), App::game));
-  App::resume();
+  App::resume(st.battery);
 }
 
 void setUp() {
   App::newGame();
+  App::echoMode = false;   // the random career can leave an ECHO visit open
   for (int s = 0; s < 4; s++) street(0);
   st.battery = 70;
 }
@@ -155,6 +156,12 @@ static void test_losing_ends_in_the_bind_screen() {
   TEST_ASSERT_EQUAL((int)App::Mode::Reveal, (int)App::mode);
   TEST_ASSERT_EQUAL(0, App::game.run.active);
   TEST_ASSERT_EQUAL(1, (int)App::game.career.runs);
+  const uint16_t before = App::pagesBefore;
+  reboot();   // switched off on the reveal: it comes back, with the same new pages
+  TEST_ASSERT_EQUAL((int)App::Mode::Reveal, (int)App::mode);
+  TEST_ASSERT_EQUAL(before, App::pagesBefore);
+  frame(key('E'));
+  TEST_ASSERT_EQUAL((int)App::Mode::Bind, (int)App::mode);
   reboot();
   TEST_ASSERT_EQUAL((int)App::Mode::Bind, (int)App::mode);
 }
@@ -312,11 +319,12 @@ static void test_a_long_random_career() {
     if (App::inRun() && App::game.phase == Game::Phase::Night && App::game.run.night < Game::Nights &&
         App::game.run.n.tithe > 60)
       App::game.run.n.tithe = 60;
-    // Overnight is covered once it's reached. Random keys burn visits slowly, so leave just a few
-    // a Night out there and the career moves on.
-    if (App::inRun() && App::game.phase == Game::Phase::Night && App::game.run.night >= Game::Nights &&
-        App::game.run.n.used < App::game.run.n.visits - 3)
-      App::game.run.n.used = (int16_t)(App::game.run.n.visits - 3);
+    // Overnight is covered once it's reached. Growing relics can carry even random keys a long
+    // way out there, so after its first Night the visits are gone and the career moves on.
+    if (App::inRun() && App::game.phase == Game::Phase::Night && App::game.run.night >= Game::Nights) {
+      const int16_t left = App::game.run.night == Game::Nights ? 1 : 0;
+      if (App::game.run.n.used < App::game.run.n.visits - left) App::game.run.n.used = (int16_t)(App::game.run.n.visits - left);
+    }
     if (App::mode == App::Mode::Bind) { App::sel = 2 + (App::challengesOpen() ? 1 : 0); frame(key('E')); continue; }
     if (App::mode == App::Mode::Premise) { frame(key('E')); continue; }
     Press p;
@@ -328,7 +336,7 @@ static void test_a_long_random_career() {
       default: p.ch = k; break;
     }
     // Head for the starred well now and then, so sales happen.
-    if (App::mode == App::Mode::Scanner && st.starId && rand() % 3 == 0) { App::wellId = st.starId; App::go(App::Mode::Visit); }
+    if ((App::mode == App::Mode::Scanner || App::mode == App::Mode::Well) && st.starId && rand() % 3 == 0) { App::wellId = st.starId; App::go(App::Mode::Visit); }
     frame(p);
     if (i % 40 == 0) street(i / 40);
     if (i % 7 == 0) App::draw(canvas, ctx(), i * 0.05f);
@@ -594,12 +602,14 @@ static void test_the_first_stop_after_half_a_day_off_catches_one() {
   App::toastT = 0;
   App::game.moments.taught |= (uint16_t)(1u << (int)App::Taught::OffFor);   // its first-time note was said already
   motion = Motion();
-  App::noteOff(600);   // ten hours: not enough
+  App::noteOff(600, 0);   // ten hours: not enough
+  App::toastT = 0;        // (its OFF FOR toast)
   holdStill(4);
   frame();
   TEST_ASSERT_TRUE(App::toastT <= 0);
   motion = Motion();
-  App::noteOff(800);
+  App::noteOff(800, 0);
+  App::toastT = 0;
   holdStill(4);
   frame();
   TEST_ASSERT_TRUE(App::toastT > 0);
@@ -993,9 +1003,14 @@ static void test_a_drifting_glyph_turns_up_and_is_kept() {
   const uint32_t h = App::strayRoll(seedOf(w), App::run().runNo, App::run().night);
   TEST_ASSERT_EQUAL((int)((h >> 8) % Strays::Shapes), App::adrift.shape);
   TEST_ASSERT_TRUE(st.adrift);
-  TEST_ASSERT_EQUAL(2, App::nHeld);   // no words for it but the first-time note (two lines), and the sound
+  TEST_ASSERT_EQUAL(1, App::nHeld);   // no words for it but the first-time note, and the sound
   TEST_ASSERT_EQUAL_STRING("A GLYPH DRIFTS BY. PRESS G, HOLD STILL", App::heldText[0]);
   App::nHeld = 0;
+  // Switched off while it waits: it's still there tonight.
+  App::adrift = App::Adrift{};
+  reboot();
+  TEST_ASSERT_TRUE(App::adrift.on);
+  TEST_ASSERT_EQUAL((int)((h >> 8) % Strays::Shapes), App::adrift.shape);
   // In the glass, held still: it draws itself, then plays its rhythm.
   App::go(App::Mode::Glass);
   holdStill(1);
@@ -1016,6 +1031,7 @@ static void test_a_drifting_glyph_turns_up_and_is_kept() {
   TEST_ASSERT_EQUAL((int)App::Mode::Glass, (int)App::mode);
   const Game::Moments& m = App::game.moments;
   TEST_ASSERT_EQUAL(1, m.nMarks);
+  TEST_ASSERT_EQUAL(0, m.adrift);   // kept: nothing waits any more
   TEST_ASSERT_EQUAL((int)((h >> 8) % Strays::Shapes), m.marks[0].shape);
   TEST_ASSERT_EQUAL_HEX16(0, m.marks[0].name);   // nothing of where it turned up
   TEST_ASSERT_EQUAL(App::run().runNo, m.marks[0].week);
@@ -1504,8 +1520,23 @@ static void test_you_write_your_own_street_in() {
   char got[13] = {0};
   memcpy(got, m.streets[1].street, 12);
   TEST_ASSERT_TRUE(strncmp(got, "BY ", 3) == 0);
-  // Four at most: no more ADD, and the Deck stops asking.
+  // Four at most: a crossed-out one makes room, and the new one takes its place...
   m.nStreets = Game::Moments::MaxStreets;
+  m.keepName = Game::packName(0x0789u, 0);
+  TEST_ASSERT_TRUE(m.streets[0].crossed);
+  TEST_ASSERT_TRUE(canAddStreet());
+  const Game::OwnStreet second = m.streets[1];
+  streetsEnter();
+  TEST_ASSERT_EQUAL(StreetCount + Game::Moments::MaxStreets, sel);   // on ADD
+  frame(key('E'));
+  frame(typeKey('A')); frame(typeKey('B'));
+  frame(key('E'));
+  TEST_ASSERT_EQUAL(Game::Moments::MaxStreets, m.nStreets);
+  TEST_ASSERT_EQUAL_MEMORY(&second, &m.streets[0], sizeof(second));   // the crossed-out one gave way
+  TEST_ASSERT_EQUAL('A', m.streets[3].who[0]);
+  TEST_ASSERT_FALSE(m.streets[3].crossed);
+  // ...but four not crossed out: no more ADD.
+  for (int i = 0; i < m.nStreets; i++) m.streets[i].crossed = 0;
   m.keepName = Game::packName(0x0789u, 0);
   TEST_ASSERT_FALSE(canAddStreet());
   streetsEnter();
@@ -1536,16 +1567,179 @@ static void test_enter_walks_the_bind_rows_down() {
   TEST_ASSERT_TRUE(App::inRun());
 }
 
-// ESC on the visit leaves to the list you came from (it used to go to the well page).
+// ESC on the visit goes one step back, to the well's page, and ESC there to the list.
 static void test_esc_leaves_the_visit() {
   bindAWeek();
   for (int k = 0; k < 3; k++) frame();
-  App::wellId = st.starId;
+  const uint32_t id = st.starId;
+  App::wellId = id;
   App::listMode = App::Mode::Glass;
   App::go(App::Mode::Visit);
   frame(key('B'));
+  TEST_ASSERT_EQUAL((int)App::Mode::Well, (int)App::mode);
+  TEST_ASSERT_EQUAL_UINT32(id, App::wellId);
+  frame(key('B'));
   TEST_ASSERT_EQUAL((int)App::Mode::Glass, (int)App::mode);
   App::listMode = App::Mode::Scanner;
+}
+
+// A Gift with no room waits at the dawn: ENTER, then a relic of yours to sell for it; ESC twice leaves it.
+static void test_a_gift_waits_for_room_at_dawn() {
+  bindAWeek();
+  Game::Run& r = App::game.run;
+  const int ids[5] = {Cat::R_ember_caller, Cat::R_tide_caller, Cat::R_gale_caller, Cat::R_hush_caller, Cat::R_static_caller};
+  for (int id : ids) Game::addRelic(r, id);
+  App::game.lastEnd = Game::NightEnd{};
+  App::game.lastEnd.paid = true;
+  App::game.lastEnd.portents = 2;
+  App::game.lastEnd.got[0] = Game::PortentResult{Cat::Portent_gift, Cat::R_porch_light, 0, -1};
+  App::game.lastEnd.got[1] = Game::PortentResult{Cat::Portent_gift, Cat::R_rush_hour, 0, -1};
+  App::game.moments.portent = Game::PortentChoice{};
+  App::game.moments.swap = Game::GiftSwap{{(uint8_t)(Cat::R_porch_light + 1), (uint8_t)(Cat::R_rush_hour + 1), 0}, {-1, -1, -1}, {-1, -1, -1}};
+  App::go(App::Mode::NightEnd);
+  frame(key('E'));   // skip the tally
+  TEST_ASSERT_EQUAL(0, App::giftToPlace(App::game.lastEnd));
+  frame(key('E'));   // make room: your relics
+  TEST_ASSERT_TRUE(App::giftPicking);
+  App::sel = 1;      // sell the Tide caller
+  frame(key('E'));
+  TEST_ASSERT_TRUE(Game::owns(r, Cat::R_porch_light));
+  TEST_ASSERT_FALSE(Game::owns(r, Cat::R_tide_caller));
+  TEST_ASSERT_EQUAL(5, r.nRelics);
+  TEST_ASSERT_EQUAL((int)App::Mode::NightEnd, (int)App::mode);
+  // The second: ESC once asks, a second ESC leaves it.
+  TEST_ASSERT_EQUAL(1, App::giftToPlace(App::game.lastEnd));
+  frame(key('B'));
+  TEST_ASSERT_EQUAL_STRING("ESC AGAIN TO LEAVE IT", App::toastText);
+  TEST_ASSERT_EQUAL(1, App::giftToPlace(App::game.lastEnd));
+  frame(key('B'));
+  TEST_ASSERT_EQUAL(-1, App::giftToPlace(App::game.lastEnd));
+  TEST_ASSERT_FALSE(Game::owns(r, Cat::R_rush_hour));
+  TEST_ASSERT_EQUAL(-2, App::game.lastEnd.got[1].relic);
+  frame(key('E'));   // on to the stall
+  TEST_ASSERT_EQUAL((int)App::Mode::Shop, (int)App::mode);
+}
+
+// The dawn's lines that matter (MERCY, what crumbled) always find room; the token
+// line and then the Collector's remark make way for them.
+static bool dawnSays(const char* text) {
+  App::DawnLine l[App::DawnLineMax];
+  int n = App::dawnLines(App::game.lastEnd, App::game.run, l);
+  App::fitDawnLines(l, n, App::dawnTop(App::game.lastEnd));
+  for (int i = 0; i < n; i++) if (!l[i].say && !strcmp(l[i].text, text)) return true;
+  return false;
+}
+static void test_the_dawn_always_says_mercy_and_what_crumbled() {
+  bindAWeek();
+  Game::NightEnd& e = App::game.lastEnd;
+  e = Game::NightEnd{};
+  e.paid = true;
+  e.spare = 1;
+  e.trade = 6;
+  e.spareCoin = 1;
+  e.reward = 5;
+  e.mercy = true;
+  e.withered = true;
+  App::game.run.night = 2;
+  App::game.moments.portent = Game::PortentChoice{};
+  App::game.moments.lastToken = Game::T_Laundromat + 1;
+  App::game.moments.dawn = Game::DawnNotes{};
+  App::game.moments.dawn.crumbled = Cat::R_porch_light + 1;
+  App::game.moments.dawn.nCrumbled = 1;
+  TEST_ASSERT_TRUE(dawnSays("MERCY: THE NEXT STALL GOES EASY ON YOU"));
+  TEST_ASSERT_TRUE(dawnSays("PORCH LIGHT CRUMBLED"));
+  TEST_ASSERT_TRUE(App::collectorShown(e, App::game.run));   // a short tally leaves room for all of it
+  // A long tally: the token line and the Collector go, MERCY and the crumble stay.
+  e.favors = 4;
+  e.interest = 2;
+  e.gilt = 2;
+  e.thread = 4;
+  App::game.moments.dawn.nCrumbled = 2;
+  TEST_ASSERT_TRUE(dawnSays("MERCY: THE NEXT STALL GOES EASY ON YOU"));
+  TEST_ASSERT_TRUE(dawnSays("2 WITHERED RELICS CRUMBLED"));
+  TEST_ASSERT_FALSE(dawnSays("A LAUNDROMAT TOKEN TURNED UP"));
+  TEST_ASSERT_FALSE(App::collectorShown(e, App::game.run));
+  // Three Portents and the token: every Portent's line has room.
+  e = Game::NightEnd{};
+  e.paid = true;
+  e.spare = 11;
+  e.portents = 3;
+  e.got[0] = Game::PortentResult{Cat::Portent_windfall, -1, 10, -1};
+  e.got[1] = Game::PortentResult{Cat::Portent_tuning, -1, 0, -1};
+  e.got[2] = Game::PortentResult{Cat::Portent_chalk_mark, -1, 0, -2};
+  TEST_ASSERT_TRUE(dawnSays("WINDFALL: +10 COIN"));
+  TEST_ASSERT_TRUE(dawnSays("CHALK MARK: YOU HOLD 4 ALREADY"));
+}
+
+// A Scroll with no spell slot waits at the dawn: ENTER, then a spell of yours to forget; ESC twice leaves it.
+static void test_a_scroll_waits_for_a_slot_at_dawn() {
+  bindAWeek();
+  Game::Run& r = App::game.run;
+  r.nSpells = 0;
+  r.spells[r.nSpells++] = Cat::Spell_glamour;
+  r.spells[r.nSpells++] = Cat::Spell_hex;
+  App::game.lastEnd = Game::NightEnd{};
+  App::game.lastEnd.paid = true;
+  App::game.lastEnd.portents = 2;
+  App::game.lastEnd.got[0] = Game::PortentResult{Cat::Portent_scroll, -1, 0, Cat::Spell_haste};
+  App::game.lastEnd.got[1] = Game::PortentResult{Cat::Portent_scroll, -1, 0, Cat::Spell_echo};
+  App::game.moments.portent = Game::PortentChoice{};
+  App::game.moments.dawn = Game::DawnNotes{};
+  App::game.moments.swap = Game::GiftSwap{{(uint8_t)(Game::SwapSpell | (Cat::Spell_haste + 1)),
+                                            (uint8_t)(Game::SwapSpell | (Cat::Spell_echo + 1)), 0},
+                                           {-1, -1, -1}, {-1, -1, -1}};
+  App::go(App::Mode::NightEnd);
+  frame(key('E'));   // skip the tally
+  TEST_ASSERT_EQUAL(-1, App::giftToPlace(App::game.lastEnd));
+  TEST_ASSERT_EQUAL(0, App::spellToPlace(App::game.lastEnd));
+  frame(key('E'));   // make room: your spells
+  TEST_ASSERT_TRUE(App::spellPicking);
+  App::sel = 1;      // forget HEX
+  frame(key('E'));
+  TEST_ASSERT_EQUAL(Cat::Spell_glamour, r.spells[0]);
+  TEST_ASSERT_EQUAL(Cat::Spell_haste, r.spells[1]);
+  TEST_ASSERT_EQUAL(2, r.nSpells);
+  TEST_ASSERT_EQUAL_STRING("HEX FORGOTTEN", App::toastText);
+  // The second: ESC once asks, a second ESC leaves it.
+  TEST_ASSERT_EQUAL(1, App::spellToPlace(App::game.lastEnd));
+  frame(key('B'));
+  TEST_ASSERT_EQUAL_STRING("ESC AGAIN TO LEAVE IT", App::toastText);
+  frame(key('B'));
+  TEST_ASSERT_EQUAL(-1, App::spellToPlace(App::game.lastEnd));
+  TEST_ASSERT_EQUAL(-2, App::game.lastEnd.got[1].spell);
+  TEST_ASSERT_TRUE(dawnSays("SCROLL: HASTE"));
+  TEST_ASSERT_TRUE(dawnSays("NO SLOT, SO YOU LEFT THE FREE SPELL"));
+  frame(key('E'));   // on to the stall
+  TEST_ASSERT_EQUAL((int)App::Mode::Shop, (int)App::mode);
+}
+
+// Empty pockets: the Night's relic with no room waits on the same screen as a Gift.
+static void test_the_empty_pockets_relic_waits_at_dawn() {
+  bindAWeek();
+  Game::Run& r = App::game.run;
+  r.challenge = 7;
+  const int ids[5] = {Cat::R_ember_caller, Cat::R_tide_caller, Cat::R_gale_caller, Cat::R_hush_caller, Cat::R_static_caller};
+  for (int id : ids) Game::addRelic(r, id);
+  App::game.lastEnd = Game::NightEnd{};
+  App::game.lastEnd.paid = true;
+  App::game.lastEnd.gift = Cat::R_porch_light;
+  App::game.moments.portent = Game::PortentChoice{};
+  App::game.moments.swap = Game::GiftSwap{};
+  App::game.moments.dawn = Game::DawnNotes{};
+  App::game.moments.dawn.gift = Cat::R_porch_light + 1;
+  App::game.moments.dawn.giftEd = -1;
+  App::go(App::Mode::NightEnd);
+  frame(key('E'));   // skip the tally
+  TEST_ASSERT_EQUAL(3, App::giftToPlace(App::game.lastEnd));
+  frame(key('B'));
+  frame(key('B'));   // leave it
+  TEST_ASSERT_EQUAL(-1, App::giftToPlace(App::game.lastEnd));
+  TEST_ASSERT_FALSE(Game::owns(r, Cat::R_porch_light));
+  TEST_ASSERT_EQUAL(Cat::R_porch_light, Game::nightRelic(App::game.lastEnd));
+  char b[40];
+  snprintf(b, sizeof(b), "LEFT THE RELIC. +1 ATTUNEMENT: %s", App::energyWord(r.focus));
+  TEST_ASSERT_TRUE(dawnSays(b));
+  TEST_ASSERT_FALSE(dawnSays("MERCY: THE NEXT STALL GOES EASY ON YOU"));
 }
 
 // The stall asks twice before leaving, selling or polishing; a cursor move withdraws the question.
@@ -1578,7 +1772,7 @@ static void test_the_stall_asks_twice() {
   frame(key('x'));
   TEST_ASSERT_EQUAL(1, r.nRelics);
   char ask[40];
-  snprintf(ask, sizeof(ask), "X AGAIN TO SELL IT FOR %dc", Game::sellBack(r, r.relics[0]));
+  snprintf(ask, sizeof(ask), "X AGAIN TO SELL FOR %dc (POLISH LOST)", Game::sellBack(r, r.relics[0]));   // polished just above
   TEST_ASSERT_EQUAL_STRING(ask, App::toastText);
   frame(key('x'));
   TEST_ASSERT_EQUAL(0, r.nRelics);
@@ -1715,11 +1909,354 @@ static void test_an_empty_street_name_is_refused() {
   App::game.career.pages &= ~(1u << 7);
 }
 
+// GIVE UP asks twice, and the question goes when its warning does: an ENTER
+// minutes later asks again instead of ending the week.
+static void test_give_up_is_only_armed_while_it_says_so() {
+  bindAWeek();
+  App::go(App::Mode::Menu);
+  for (int i = 0; i < 12; i++) frame(key('D'));   // the last row
+  frame(key('E'));
+  TEST_ASSERT_TRUE(App::confirmAbandon);
+  TEST_ASSERT_TRUE(App::toastSays(App::AbandonAsk));
+  for (int i = 0; i < 70; i++) frame();   // the warning ends
+  TEST_ASSERT_FALSE(App::confirmAbandon);
+  frame(key('E'));
+  TEST_ASSERT_TRUE(App::inRun());
+  TEST_ASSERT_TRUE(App::confirmAbandon);
+  frame(key('E'));
+  TEST_ASSERT_EQUAL((int)App::Mode::Lost, (int)App::mode);
+  App::toastT = 0;
+}
+
+// One ward a Night: a second twist casts nothing and says so; with no week bound, a twist is nothing.
+static void test_a_second_twist_says_theres_no_ward_left() {
+  App::toastT = 0;
+  TEST_ASSERT_FALSE(App::twist(ctx()));
+  TEST_ASSERT_TRUE(App::toastT <= 0);
+  bindAWeek();
+  TEST_ASSERT_TRUE(App::twist(ctx()));
+  TEST_ASSERT_EQUAL_STRING("HIDDEN: THE WARDENS CAN'T HEAR YOU", App::toastText);
+  TEST_ASSERT_FALSE(App::twist(ctx()));
+  TEST_ASSERT_EQUAL_STRING("NO WARD LEFT TONIGHT", App::toastText);
+}
+
+// On a dimmed or face-down screen, notes, toasts and the Overheard wait for it to light up.
+static void test_words_wait_for_a_lit_screen() {
+  App::go(App::Mode::Scanner);
+  App::toast("ONE");
+  App::toastAfter("TWO");
+  st.awake = false;
+  for (int i = 0; i < 100; i++) frame();
+  TEST_ASSERT_EQUAL_STRING("ONE", App::toastText);
+  TEST_ASSERT_TRUE(App::toastT > 1.5f);
+  st.awake = true;
+  for (int i = 0; i < 40; i++) frame();
+  TEST_ASSERT_EQUAL_STRING("TWO", App::toastText);
+  for (int i = 0; i < 40; i++) frame();
+  App::nHeld = 0;
+  App::holdNote("A NOTE", UI::Text);
+  motion = Motion();
+  holdStill(2);
+  st.awake = false;
+  for (int i = 0; i < 40; i++) frame();
+  TEST_ASSERT_EQUAL(1, App::nHeld);
+  st.awake = true;
+  frame();
+  TEST_ASSERT_EQUAL(0, App::nHeld);
+  TEST_ASSERT_EQUAL_STRING("A NOTE", App::toastText);
+  App::toastT = 0;
+}
+
+// Rank rises with Tithes paid, and says so when it does.
+static void test_a_new_rank_is_said() {
+  App::go(App::Mode::Scanner);
+  App::rankSeen = -1;
+  frame();
+  TEST_ASSERT_EQUAL(0, App::rankSeen);
+  App::game.career.stats[(int)Cat::Stat::nights_paid] = 3;
+  frame();
+  TEST_ASSERT_EQUAL_STRING("YOU ARE A DOWSER NOW", App::toastText);
+  App::toastT = 0;
+  frame();
+  TEST_ASSERT_TRUE(App::toastT <= 0);   // once
+  App::game.career.stats[(int)Cat::Stat::nights_paid] = 200;
+  frame();
+  TEST_ASSERT_EQUAL_STRING("YOU ARE AN OLD ONE NOW", App::toastText);
+  App::toastT = 0;
+  App::rankSeen = -1;
+}
+
+// Back on after a while: how long, and how many wells settled meanwhile. The
+// first-time note only comes when some did.
+static void test_the_off_time_says_what_settled() {
+  App::go(App::Mode::Scanner);
+  App::noteOff(30, 0);
+  TEST_ASSERT_EQUAL_STRING("OFF FOR 30 MIN", App::toastText);
+  TEST_ASSERT_FALSE(App::taught(App::Taught::OffFor));
+  App::toastT = 0;
+  App::noteOff(182, 4);
+  TEST_ASSERT_EQUAL_STRING("OFF FOR 3H 02M. 4 WELLS SETTLED", App::toastText);
+  TEST_ASSERT_TRUE(App::taught(App::Taught::OffFor));
+  App::toastT = 0;
+  App::nToastNext = 0;
+  App::noteOffUnknown(0);
+  TEST_ASSERT_TRUE(App::toastT <= 0);
+  App::noteOffUnknown(2);
+  TEST_ASSERT_EQUAL_STRING("COULDN'T TELL HOW LONG IT WAS OFF", App::toastText);
+  App::toastT = 0;
+  App::settleDue = false;
+}
+
+// A toast set while the boot animation plays waits for it to end.
+static void test_a_toast_waits_out_the_boot() {
+  App::go(App::Mode::Boot);
+  App::toastAfter("OLD SAVE SET ASIDE. NEW CAREER", UI::Rec, 3.0f);
+  for (int i = 0; i < 20; i++) frame();
+  TEST_ASSERT_EQUAL((int)App::Mode::Boot, (int)App::mode);
+  TEST_ASSERT_TRUE(App::toastT >= 3.0f);
+  for (int i = 0; i < 40; i++) frame();   // the boot ends
+  TEST_ASSERT_TRUE(App::mode != App::Mode::Boot);
+  TEST_ASSERT_TRUE(App::toastT > 2.0f);
+  App::toastT = 0;
+}
+
+// A reroll that would throw away Mercy's half-price relic asks first, and leaving with free rerolls says so.
+static void test_the_stall_says_what_a_reroll_and_leaving_lose() {
+  bindAWeek();
+  Game::Run& r = App::game.run;
+  r.coin = 50;
+  r.night = 1;   // the stall after Night 1: the Caller and the half-price relic both on the shelf
+  r.shopFlags |= Game::SF_Mercy;
+  App::openStall();
+  TEST_ASSERT_EQUAL((int)App::Mode::Shop, (int)App::mode);
+  bool half = false;
+  for (int i = 0; i < App::game.shop.nRelics; i++) half |= App::game.shop.relics[i].half;
+  TEST_ASSERT_TRUE(half);
+  frame(key('B'));
+  TEST_ASSERT_EQUAL_STRING("ESC AGAIN: 1 FREE REROLL UNUSED", App::toastText);
+  frame(arrow(true));
+  frame(key('r'));
+  TEST_ASSERT_EQUAL(1, App::game.shop.freeRerolls);
+  TEST_ASSERT_TRUE(strstr(App::toastText, "R AGAIN") == App::toastText);
+  frame(key('r'));
+  TEST_ASSERT_EQUAL(0, App::game.shop.freeRerolls);
+  TEST_ASSERT_EQUAL_STRING("NEW RELICS", App::toastText);
+}
+
+// The Glass house crown isn't offered for sale, and a full pair of trinket slots says FULL.
+static void test_the_stall_says_what_cant_be_had() {
+  bindAWeek();
+  Game::Run& r = App::game.run;
+  r.challenge = 3;
+  Game::addRelic(r, Cat::R_glass_crown);
+  r.coin = 50;
+  r.trinkets[r.nTrinkets++] = Cat::Trinket_haggler;
+  r.trinkets[r.nTrinkets++] = Cat::Trinket_pawn_ticket;
+  App::openStall();
+  App::tab = App::TabYours;
+  App::sel = 0;
+  frame(key('x'));
+  TEST_ASSERT_EQUAL_STRING("THE GLASS CROWN CAN'T BE SOLD", App::toastText);
+  frame(key('x'));
+  TEST_ASSERT_EQUAL(1, r.nRelics);
+  App::game.shop.trinket.kind = Game::OfferKind::Trinket;
+  App::game.shop.trinket.id = Cat::Trinket_lucky_coin;
+  App::game.shop.trinket.sold = 0;
+  App::tab = App::TabWares;
+  App::sel = App::game.shop.nCons;
+  frame(key('E'));
+  TEST_ASSERT_EQUAL_STRING("TRINKET SLOTS FULL (2 OF 2)", App::toastText);
+  TEST_ASSERT_EQUAL(2, r.nTrinkets);
+}
+
+// Selling one to buy sells the one you picked, and forgetting a spell forgets the one you picked.
+static void test_the_stall_lets_go_of_the_one_you_pick() {
+  bindAWeek();
+  Game::Run& r = App::game.run;
+  r.coin = 60;
+  r.night = 2;
+  App::openStall();
+  while (Game::slotsUsed(r) < Game::relicSlots(r)) Game::addRelic(r, Cat::R_crowd_feeder + r.nRelics);
+  const int keep0 = r.relics[0].id, gone = r.relics[2].id;
+  App::game.shop.relics[0] = Game::relicOffer(Cat::R_long_receipt, -1, -1);
+  App::tab = App::TabRelics;
+  App::sel = 0;
+  frame(key('E'));
+  TEST_ASSERT_EQUAL((int)App::Mode::ShopDrop, (int)App::mode);
+  App::sel = 2;
+  frame(key('E'));
+  TEST_ASSERT_EQUAL((int)App::Mode::Shop, (int)App::mode);
+  TEST_ASSERT_TRUE(Game::owns(r, keep0));
+  TEST_ASSERT_FALSE(Game::owns(r, gone));
+  TEST_ASSERT_TRUE(Game::owns(r, Cat::R_long_receipt));
+  TEST_ASSERT_EQUAL_STRING("BOUGHT LONG RECEIPT", App::toastText);
+  // Spells: the second one goes.
+  r.nSpells = 0;
+  r.spells[r.nSpells++] = Cat::Spell_hex;
+  r.spells[r.nSpells++] = Cat::Spell_glamour;
+  App::game.shop.cons[0].kind = Game::OfferKind::Spell;
+  App::game.shop.cons[0].id = Cat::Spell_haste;
+  App::game.shop.cons[0].sold = 0;
+  App::tab = App::TabWares;
+  App::sel = 0;
+  frame(key('E'));
+  TEST_ASSERT_EQUAL((int)App::Mode::ShopForget, (int)App::mode);
+  App::sel = 1;
+  frame(key('E'));
+  TEST_ASSERT_EQUAL(Cat::Spell_hex, r.spells[0]);
+  TEST_ASSERT_EQUAL(Cat::Spell_haste, r.spells[1]);
+}
+
+// ---- What the screen says matches what the rules do --------------------------
+
+// The long way: the visit's estimate (and so the star) prices an old well at 0, as the offering pays.
+static void test_the_long_way_estimate_is_zero() {
+  bindAWeek();
+  for (int k = 0; k < 3; k++) frame();
+  Game::Run& r = App::game.run;
+  r.challenge = 5;
+  const WellRec* w = sky.byId(st.starId);
+  TEST_ASSERT_NOT_NULL(w);
+  const Game::WellView v = App::viewOf(*w, sky, st.nowMs);
+  r.hold[Game::Tide] = 6;
+  Game::sell(r, App::game.atlas, v, App::hereNow(ctx()), Game::Tide);
+  r.night = 1;
+  r.hold[Game::Tide] = 6;
+  TEST_ASSERT_EQUAL_DOUBLE(0, App::estimateSale(v, App::hereNow(ctx()), Game::Tide));
+  const Game::Sold s = Game::sell(r, App::game.atlas, v, App::hereNow(ctx()), Game::Tide);
+  TEST_ASSERT_EQUAL_DOUBLE(0, s.resonance);
+}
+
+// Walking past, a well you opened in reach stays in reach until it fades
+// past -75. One you never opened is out of reach below -70.
+static void test_an_open_well_is_held_while_it_fades() {
+  bindAWeek();
+  const Net passing = wellAt(9100, -60), other = wellAt(9101, -73);
+  const uint32_t id = idOf(passing);
+  auto drawWhy = [&](uint32_t at) {
+    App::wellId = at;
+    return (int)Game::canDraw(App::run(), App::game.atlas, App::currentView(ctx()));
+  };
+  for (int k = 0; k < 3; k++) { Net two[2] = {passing, other}; scanOf(two, 2); }
+  App::go(App::Mode::Visit);
+  TEST_ASSERT_EQUAL((int)Game::Why::Ok, drawWhy(id));
+  for (int k = 0; k < 6; k++) { Net two[2] = {wellAt(9100, -73), other}; scanOf(two, 2); }
+  TEST_ASSERT_TRUE(sky.byId(id)->sig < Game::ReachDbm);
+  TEST_ASSERT_EQUAL((int)Game::Why::Ok, drawWhy(id));
+  TEST_ASSERT_EQUAL((int)Game::Why::TooFar, drawWhy(idOf(other)));   // never opened: too far
+  for (int k = 0; k < 6; k++) { Net two[2] = {wellAt(9100, -80), other}; scanOf(two, 2); }
+  TEST_ASSERT_EQUAL((int)Game::Why::TooFar, drawWhy(id));
+  // Back at -73 after fading past -75: not held any more.
+  for (int k = 0; k < 6; k++) { Net two[2] = {wellAt(9100, -73), other}; scanOf(two, 2); }
+  TEST_ASSERT_EQUAL((int)Game::Why::TooFar, drawWhy(id));
+}
+
+// A Pilgrim sees one draw row, naming the energy every draw gives.
+static void test_a_pilgrim_sees_one_draw_row() {
+  bindAWeek();
+  for (int k = 0; k < 3; k++) frame();
+  Game::Run& r = App::game.run;
+  r.calling = Cat::Calling_pilgrim;
+  App::wellId = st.starId;
+  App::go(App::Mode::Visit);
+  App::buildActions(ctx());
+  int draws = 0;
+  for (int i = 0; i < App::nActions; i++) {
+    if (App::actions[i].act != App::Act::DrawOwn && App::actions[i].act != App::Act::DrawFocus) continue;
+    draws++;
+    TEST_ASSERT_EQUAL(r.focus, App::actions[i].arg);
+  }
+  TEST_ASSERT_EQUAL(1, draws);
+}
+
+// A GLAMOUR already waiting: the second is refused with the reason, and kept.
+static void test_a_waiting_spell_is_refused_by_name() {
+  bindAWeek();
+  Game::Run& r = App::game.run;
+  r.spells[r.nSpells++] = Cat::Spell_glamour;
+  r.n.glamour = 1;
+  App::back = App::Mode::Scanner;
+  App::go(App::Mode::Spells);
+  frame(key('E'));
+  TEST_ASSERT_EQUAL_STRING("GLAMOUR IS ALREADY READY", App::toastText);
+  TEST_ASSERT_EQUAL(2, r.nSpells);
+}
+
+// Carving over a glyph you carved asks for a second ENTER.
+static void test_carving_over_a_glyph_asks_twice() {
+  bindAWeek();
+  for (int k = 0; k < 3; k++) frame();
+  Game::Run& r = App::game.run;
+  App::wellId = st.starId;
+  const WellRec* w = sky.byId(App::wellId);
+  Game::AtlasEntry& a = App::game.atlas.touch(w->id, w->seed, r.runNo, 0);
+  a.glyph = Cat::Glyph_deep;
+  r.glyphTokens[r.nGlyphTokens++] = Cat::Glyph_lit;
+  App::go(App::Mode::Visit);
+  App::buildActions(ctx());
+  for (int i = 0; i < App::nActions; i++) if (App::actions[i].act == App::Act::Carve) App::sel = i;
+  frame(key('E'));
+  TEST_ASSERT_EQUAL_STRING("ENTER AGAIN: REPLACES DEEP GLYPH", App::toastText);
+  TEST_ASSERT_EQUAL(Cat::Glyph_deep, App::game.atlas.find(w->id)->glyph);
+  frame(key('E'));
+  TEST_ASSERT_EQUAL(Cat::Glyph_lit, App::game.atlas.find(w->id)->glyph);
+  TEST_ASSERT_EQUAL(0, r.nGlyphTokens);
+}
+
+// ECHO: the picker's estimate is what the offering through it would make.
+static void test_the_echo_picker_prices_the_offering() {
+  bindAWeek();
+  for (int k = 0; k < 3; k++) frame();
+  Game::Run& r = App::game.run;
+  const WellRec* w = sky.byId(st.starId);
+  r.hold[Game::Tide] = 5;
+  Game::sell(r, App::game.atlas, App::viewOf(*w, sky, st.nowMs), App::hereNow(ctx()), Game::Tide);
+  App::game.atlas.find(w->id)->soldNight = -1;   // as if it had settled
+  r.hold[Game::Tide] = 6;
+  r.n.echo = 1;
+  App::back = App::Mode::Visit;
+  App::go(App::Mode::Atlas);
+  frame();
+  const Game::AtlasEntry* a = App::game.atlas.find(w->id);
+  TEST_ASSERT_NOT_NULL(a);
+  const float shown = App::atlasEst[a - App::game.atlas.e];
+  TEST_ASSERT_TRUE(shown > 0);
+  App::wellId = w->id;
+  App::echoMode = true;
+  App::buildActions(ctx());
+  bool found = false;
+  for (int i = 0; i < App::nActions; i++)
+    if (App::actions[i].act == App::Act::Sell && App::actions[i].arg == Game::Tide) {
+      TEST_ASSERT_FLOAT_WITHIN(0.01f * (1 + shown), shown, (float)App::actions[i].est);
+      found = true;
+    }
+  TEST_ASSERT_TRUE(found);
+  App::echoMode = false;
+}
+
+// The hold's leak says what went.
+static void test_the_leak_is_said() {
+  bindAWeek();
+  Game::Run& r = App::game.run;
+  r.hold[Game::Ember] = 4;
+  frame();
+  App::toastT = 0;
+  App::nToastNext = 0;
+  App::game.playMs = r.holdLeakMs + 15 * 60000;
+  frame();
+  TEST_ASSERT_EQUAL(3, r.hold[Game::Ember]);
+  TEST_ASSERT_EQUAL_STRING("1 EMBER LEAKED FROM YOUR HOLD", App::toastText);
+}
+
 int main() {
   stash = new Game::Saved;
   UNITY_BEGIN();
   RUN_TEST(test_enter_walks_the_bind_rows_down);
   RUN_TEST(test_esc_leaves_the_visit);
+  RUN_TEST(test_a_gift_waits_for_room_at_dawn);
+  RUN_TEST(test_the_dawn_always_says_mercy_and_what_crumbled);
+  RUN_TEST(test_a_scroll_waits_for_a_slot_at_dawn);
+  RUN_TEST(test_the_empty_pockets_relic_waits_at_dawn);
   RUN_TEST(test_the_stall_asks_twice);
   RUN_TEST(test_the_show_leaves_on_one_key);
   RUN_TEST(test_first_time_notes_say_their_line_once);
@@ -1762,5 +2299,21 @@ int main() {
   RUN_TEST(test_a_stretch_walked_on_three_nights_asks);
   RUN_TEST(test_a_new_stretch_replaces_the_oldest_forgotten_one);
   RUN_TEST(test_you_write_your_own_street_in);
+  RUN_TEST(test_give_up_is_only_armed_while_it_says_so);
+  RUN_TEST(test_a_second_twist_says_theres_no_ward_left);
+  RUN_TEST(test_words_wait_for_a_lit_screen);
+  RUN_TEST(test_a_new_rank_is_said);
+  RUN_TEST(test_the_off_time_says_what_settled);
+  RUN_TEST(test_a_toast_waits_out_the_boot);
+  RUN_TEST(test_the_stall_says_what_a_reroll_and_leaving_lose);
+  RUN_TEST(test_the_stall_says_what_cant_be_had);
+  RUN_TEST(test_the_stall_lets_go_of_the_one_you_pick);
+  RUN_TEST(test_the_long_way_estimate_is_zero);
+  RUN_TEST(test_an_open_well_is_held_while_it_fades);
+  RUN_TEST(test_a_pilgrim_sees_one_draw_row);
+  RUN_TEST(test_a_waiting_spell_is_refused_by_name);
+  RUN_TEST(test_carving_over_a_glyph_asks_twice);
+  RUN_TEST(test_the_leak_is_said);
+  RUN_TEST(test_the_echo_picker_prices_the_offering);
   return UNITY_END();
 }

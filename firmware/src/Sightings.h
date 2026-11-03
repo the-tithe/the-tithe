@@ -258,6 +258,8 @@ class Sightings {
   int near() const { return near_; }
   int heard() const { return heard_; }   // routers in the latest scan
   WardKind ward() const { return ward_; }
+  // The ward this scan alone would say: ward() follows it once two scans agree.
+  WardKind wardHeard() const { return WellRules::wardOf(near_); }
   int energyNear(Energy e) const { return energyNear_[(int)e]; }
   int newThisScan() const { return newThisScan_; }
   uint32_t found() const { return count_ + evicted_; }

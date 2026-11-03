@@ -13,6 +13,9 @@ namespace App {
 
 // ---- Your build -------------------------------------------------------------------
 
+// What a growing relic has grown to: x2.2 for one that multiplies Amp, +6 for
+// one that adds, and whole numbers once it's big.
+
 // A line of THE REST, and what it means: the pane under the list shows the
 // selected line's title and text.
 struct RestRow {
@@ -24,12 +27,19 @@ struct RestRow {
 };
 inline RestRow restRows[40];
 
-inline int buildRows() {
+// YOUR BUILD's tabs. TONIGHT, WARES and YOU are lists of RestRows.
+enum BuildTab { BuildRelics, BuildTonight, BuildWares, BuildYou, BuildWeek, BuildTabCount };
+inline const char* const BuildTabNames[BuildTabCount] = {"RELICS", "TONIGHT", "WARES", "YOU", "THE WEEK"};
+
+// The rows of one list tab (the open one by default).
+inline int buildRows(int which = -1) {
   using namespace Game;
+  if (which < 0) which = tab;
   const Run& r = run();
   int n = 0;
+  int sec = BuildTonight;   // the tab the rows added next belong to
   auto add = [&](uint16_t c, const char* title, const char* text, const char* flavor, const char* fmt, auto... args) -> RestRow* {
-    if (n >= 40) return nullptr;
+    if (sec != which || n >= 40) return nullptr;
     RestRow& w = restRows[n++];
     snprintf(w.line, sizeof(w.line), fmt, args...);
     w.color = c;
@@ -40,6 +50,32 @@ inline int buildRows() {
   };
   char a[24], b[24], t[150];
   const bool night = game.phase == Phase::Night;
+  // Where tonight's Tithe comes from.
+  if (night && r.night < Nights) {
+    char n1[16], n2[16];
+    int k = snprintf(t, sizeof(t), "Night %d starts at %s.", r.night + 1, UI::num(Tithes[r.night], n1, sizeof(n1)));
+    if (owns(r, Cat::R_blood_moon)) k += snprintf(t + k, sizeof(t) - k, " Blood moon x1.35.");
+    if (r.n.omen == Cat::Omen_blood_price) k += snprintf(t + k, sizeof(t) - k, " Blood price x1.2.");
+    if (r.n.eclipse == Cat::Eclipse_hunger) k += snprintf(t + k, sizeof(t) - k, " The Hunger x1.25.");
+    if (r.challenge == 9 || r.challenge == 3) k += snprintf(t + k, sizeof(t) - k, " Trial x2.5.");
+    if (r.night == 1 && r.owedN2 > 0) k += snprintf(t + k, sizeof(t) - k, " Contractor's loan +%s.", UI::num(r.owedN2, n2, sizeof(n2)));
+    const double loan = r.n.tithe - titheFor(r, r.night, r.n.omen, r.n.eclipse);   // the loan, folded in at dusk
+    if (loan >= 1) k += snprintf(t + k, sizeof(t) - k, " Loan +%s.", UI::num(loan, n2, sizeof(n2)));
+    if (effectiveTithe(r) > r.n.tithe) snprintf(t + k, sizeof(t) - k, " Doubled until all 4 wards.");
+    add(UI::Text, "TONIGHT'S TITHE", t, nullptr, "TITHE %s", UI::num(effectiveTithe(r), n1, sizeof(n1)));
+  }
+  if (night && r.challenge == 8) {   // Grand tour: the wards still to offer in tonight
+    char line[40];
+    if (tourLine(line, sizeof(line))) {
+      int k = snprintf(t, sizeof(t), "The Tithe is doubled until you offer in all four kinds of ward tonight. Still to go:");
+      for (int w = 0, m = 0; w < 4; w++)
+        if (!((r.n.wardKinds >> w) & 1)) k += snprintf(t + k, sizeof(t) - k, "%s %s", m++ ? "," : "", wardName((WardKind)w));
+      snprintf(t + k, sizeof(t) - k, ".");
+      add(UI::Accent, "GRAND TOUR", t, nullptr, "%s", line);
+    } else {
+      add(UI::Dim, "GRAND TOUR", "You've offered in all four kinds of ward tonight, so the Tithe is back to normal.", nullptr, "GRAND TOUR DONE");
+    }
+  }
   // Tonight's Omen (or the Eclipse), since the Night's first screen is the only other place it shows.
   if (night && r.n.omen >= 0) {
     upper(Cat::Omens[r.n.omen].name, a, sizeof(a));
@@ -79,30 +115,24 @@ inline int buildRows() {
     snprintf(t, sizeof(t), "Your hold and your draws turn into %s for %d more offerings.", energyWord(r.n.transmuteE), r.n.transmuteLeft);
     add(UI::Accent, "TRANSMUTE", t, nullptr, "TRANSMUTE: %d LEFT", r.n.transmuteLeft);
   }
-  if (r.bargain) add(UI::Accent, "BARGAIN", "Everything at the next stall is half price.", nullptr, "NEXT STALL: BARGAIN");
+  if (r.bargain) add(UI::Accent, "BARGAIN", "Relics and wares at the next stall are half price.", nullptr, "NEXT STALL: BARGAIN");
   if (r.shopFlags & SF_RareSight) add(UI::Accent, "RARE SIGHT", Cat::Portents[Cat::Portent_rare_sight].text, nullptr, "NEXT STALL: RARE SIGHT");
   if (r.shopFlags & SF_FreeRerolls) add(UI::Accent, "FREE REROLLS", Cat::Portents[Cat::Portent_free_rerolls].text, nullptr, "NEXT STALL: FREE REROLLS");
-  if (r.shopFlags & SF_Shine) add(UI::Accent, "SHINE", Cat::Portents[Cat::Portent_shine].text, nullptr, "NEXT RELIC: A SHINE");
+  if (r.shopFlags & SF_Shine) {   // with no stall (Empty pockets) it goes on the next free relic
+    if (emptyPockets(r)) add(UI::Accent, "SHINE", "Your next free relic comes with a shine.", nullptr, "NEXT RELIC: A SHINE");
+    else add(UI::Accent, "SHINE", Cat::Portents[Cat::Portent_shine].text, nullptr, "NEXT STALL: A SHINE");
+  }
   if (r.shopFlags & SF_DoubleInterest) add(UI::Accent, "DOUBLED INTEREST", "Interest pays double at the next dawn.", nullptr, "NEXT DAWN: DOUBLE INTEREST");
-  if (r.shopFlags & SF_Mercy) add(UI::Accent, "MERCY", "You scraped through. The next stall adds a half-price relic, a free reroll and a focus Attunement.", nullptr, "NEXT STALL: MERCY");
+  if (r.shopFlags & SF_Mercy)
+    add(UI::Accent, "MERCY", oneNote(r) ? "You scraped through. The next stall adds a focus Attunement."
+                                        : "You scraped through. The next stall adds a half-price relic, a free reroll and a focus Attunement.",
+        nullptr, "NEXT STALL: MERCY");
   if (night && owns(r, Cat::R_glass_crown)) {
     snprintf(t, sizeof(t), "x3 Amp, but it refuses one energy each Night. Tonight %s is worth nothing.", energyWord(r.n.crownBan));
     add(UI::Rec, "GLASS CROWN", t, nullptr, "CROWN REFUSES %s", energyWord(r.n.crownBan));
   }
-  // Where tonight's Tithe comes from.
-  if (night && r.night < Nights) {
-    char n1[16], n2[16];
-    int k = snprintf(t, sizeof(t), "Night %d starts at %s.", r.night + 1, UI::num(Tithes[r.night], n1, sizeof(n1)));
-    if (owns(r, Cat::R_blood_moon)) k += snprintf(t + k, sizeof(t) - k, " Blood moon x1.35.");
-    if (r.n.omen == Cat::Omen_blood_price) k += snprintf(t + k, sizeof(t) - k, " Blood price x1.2.");
-    if (r.n.eclipse == Cat::Eclipse_hunger) k += snprintf(t + k, sizeof(t) - k, " The Hunger x1.25.");
-    if (r.challenge == 9 || r.challenge == 3) k += snprintf(t + k, sizeof(t) - k, " Trial x2.5.");
-    const double loan = r.n.tithe - titheFor(r, r.night, r.n.omen, r.n.eclipse);   // the loan, folded in at dusk
-    if (loan >= 1) k += snprintf(t + k, sizeof(t) - k, " Loan +%s.", UI::num(loan, n2, sizeof(n2)));
-    if (effectiveTithe(r) > r.n.tithe) snprintf(t + k, sizeof(t) - k, " Doubled until all 4 wards.");
-    add(UI::Text, "TONIGHT'S TITHE", t, nullptr, "TITHE %s", UI::num(effectiveTithe(r), n1, sizeof(n1)));
-  }
   // Who you are this week.
+  sec = BuildYou;
   upper(Cat::Callings[r.calling].name, a, sizeof(a));
   add(UI::Text, a, Cat::Callings[r.calling].text, nullptr, "CALLING: %s", a);
   if (r.challenge >= 0) {
@@ -126,6 +156,7 @@ inline int buildRows() {
   snprintf(t, sizeof(t), "Each level adds +%d Amp to every offering of that energy. The stall sells Attunements.", hasMod(r, Cat::Mod_tuning_core) ? 2 : 1);
   add(UI::Text, "ATTUNED", t, nullptr, "\x01" "ATTUNED");   // drawn with the energy symbols (see drawRestLine)
   // What you carry.
+  sec = BuildWares;
   for (int i = 0; i < r.nTrinkets; i++) {
     upper(Cat::Trinkets[r.trinkets[i]].name, a, sizeof(a));
     add(UI::Text, a, Cat::Trinkets[r.trinkets[i]].text, Cat::Trinkets[r.trinkets[i]].flavor, "TRINKET: %s", a);
@@ -146,9 +177,11 @@ inline int buildRows() {
     add(UI::Text, a, t, d.flavor, "GLYPH TO CARVE: %s", a);
   }
   // The world's opinion of you.
+  sec = BuildYou;
   if (wardensCanCome(r))
     add(r.heat >= 3 ? UI::Rec : UI::Text, "HEAT",
-        "Static adds 0.5 and other offerings cool it by 0.1. At 3 the Wardens listen and may take any offering.",
+        r.challenge == 4 ? "Static storm: nothing cools it, and Static adds 0.5. At 3 the Wardens may take any offering."
+                         : "Static adds 0.5, and every offering takes 0.1 off, Static too. At 3 the Wardens may take any offering.",
         nullptr, "HEAT %.1f%s", r.heat, r.heat >= 3 ? ": THE WARDENS LISTEN" : " (WARDENS AT 3)");
   add(UI::Text, "STANDING",
       "Hedge, Hearth, Warded, Syndicate. Offering at their wells raises it; Static lowers Warded and Syndicate. Higher means more Thirst there.",
@@ -240,8 +273,8 @@ inline void drawWeek(Canvas& g) {
 inline void updateBuild(const Ctx& c, const Press& p) {
   (void)c;
   if (p.back) { go(back); return; }
-  if (p.right || p.left) { tab = (tab + (p.right ? 1 : 2)) % 3; sel = 0; top = 0; }
-  const int rows = tab == 0 ? run().nRelics : tab == 1 ? buildRows() : 0;
+  if (p.right || p.left) { tab = (tab + (p.right ? 1 : BuildTabCount - 1)) % BuildTabCount; sel = 0; top = 0; }
+  const int rows = tab == BuildRelics ? run().nRelics : tab == BuildWeek ? 0 : buildRows();
   if (p.down && sel < rows - 1) sel++;
   if (p.up && sel > 0) sel--;
 }
@@ -252,24 +285,41 @@ inline void drawBuild(Canvas& g, const Ctx& c) {
   g.fillSprite(UI::Bg);
   const Run& r = run();
   char b[48];
-  static const char* const tabNames[3] = {"RELICS", "THE REST", "THE WEEK"};
-  UI::text(g, 3, 3, tabNames[tab], UI::SelText);
+  if (tab >= BuildTabCount) tab = BuildRelics;
+  UI::text(g, 3, 3, BuildTabNames[tab], UI::SelText);
   snprintf(b, sizeof(b), "%dc  N%d", (int)r.coin, r.night + 1);
   UI::textRight(g, UI::W - 3, 3, b, UI::Dim);
   g.drawFastHLine(0, 13, UI::W, UI::Sep);
-  if (tab == 0) {
+  if (tab == BuildRelics) {
     if (r.nRelics == 0) UI::textCenter(g, 40, "NO RELICS YET", UI::Dim);
     const int show = 6;   // rows above the details pane
     if (sel < top) top = sel;
     if (sel >= top + show) top = sel - show + 1;
+    const bool sleeper = game.phase == Phase::Night && r.n.noPolish;   // THE SLEEPER: Polish works at half tier tonight
+    const int copied = copycatTarget(r);
     for (int i = top; i < r.nRelics && i < top + show; i++) {
       const int y = 17 + (i - top) * 10;
+      const OwnedRelic& o = r.relics[i];
       if (i == sel) g.fillRect(0, y - 1, UI::W, 10, UI::SelBg);
-      relicLine(g, y, r.relics[i].id, r.relics[i].ed, r.relics[i].tier, i == sel, false);
-      if (r.state[r.relics[i].id] > 0 && !(r.relics[i].id == Cat::R_long_receipt && game.phase == Phase::Shop)) {
-        snprintf(b, sizeof(b), "+%.2g", r.state[r.relics[i].id]);
-        UI::textRight(g, UI::W - 4, y, b, UI::Accent);
+      int right = UI::W - 4;
+      if (o.withered >= 0) {   // on a Bone Pact: how many Nights it has left
+        snprintf(b, sizeof(b), "WITHERS %d", o.withered);
+        UI::textRight(g, right, y, b, UI::Rec);
+        right -= UI::textW(b) + 6;
       }
+      if (r.state[o.id] > 0 && !(o.id == Cat::R_long_receipt && game.phase == Phase::Shop)) {
+        growthText(o.id, r.state[o.id], b, sizeof(b));
+        UI::textRight(g, right, y, b, UI::Accent);
+        right -= UI::textW(b) + 6;
+      } else if (o.id == Cat::R_copycat_sigil && copied >= 0) {   // what it copies right now
+        char cn[24];
+        upper(Cat::Relics[copied].name, cn, sizeof(cn));
+        snprintf(b, sizeof(b), "COPYING: %s", cn);
+        if (11 + UI::textW("COPYCAT SIGIL") + 6 + UI::textW(b) > right) snprintf(b, sizeof(b), "%s", cn);
+        UI::textRight(g, right, y, b, UI::Accent);
+        right -= UI::textW(b) + 6;
+      }
+      relicLine(g, y, o.id, o.ed, sleeper ? o.tier / 2 : o.tier, i == sel, false, right);
     }
     if (sel < r.nRelics) {
       const Cat::RelicDef& d = Cat::Relics[r.relics[sel].id];
@@ -278,15 +328,27 @@ inline void drawBuild(Canvas& g, const Ctx& c) {
       char sub[32], habit[16];
       upper(Cat::SchoolNames[d.school], habit, sizeof(habit));
       snprintf(sub, sizeof(sub), "%s %s", Cat::RarityNames[d.rarity], habit);
-      char ex[96];
+      char ex[96], ex2[140];
       const OwnedRelic& o = r.relics[sel];
-      details(g, n, sub, d.text, relicExtras(o.tier, o.ed, o.withered, d.flavor, ex, sizeof(ex)), UI::rarityColor(d.rarity));
+      const char* fl = relicExtras(sleeper ? o.tier / 2 : o.tier, o.ed, o.withered, d.flavor, ex, sizeof(ex));
+      static const char* const tn[] = {"", "I", "II", "III"};
+      if (sleeper && o.tier > 0) {   // say why the numeral dropped
+        int k = o.tier / 2 ? snprintf(ex2, sizeof(ex2), "The Sleeper: Polish %s works as %s tonight.", tn[o.tier], tn[o.tier / 2])
+                           : snprintf(ex2, sizeof(ex2), "The Sleeper: Polish %s does nothing tonight.", tn[o.tier]);
+        if (fl == ex) snprintf(ex2 + k, sizeof(ex2) - k, " %s", ex);   // the working tier's strength, its shine, its withering
+        fl = ex2;
+      } else if (o.id == Cat::R_copycat_sigil && copied >= 0) {
+        snprintf(ex2, sizeof(ex2), "Copying %s right now.%s%s", Cat::Relics[copied].name, fl == ex ? " " : "", fl == ex ? ex : "");
+        fl = ex2;
+      }
+      details(g, n, sub, d.text, fl, UI::rarityColor(d.rarity));
     }
-  } else if (tab == 2) {
+  } else if (tab == BuildWeek) {
     drawWeek(g);
   } else {
     const int n = buildRows();
-    if (sel > n - 1) sel = n - 1;
+    if (n == 0) UI::textCenter(g, 40, tab == BuildWares ? "NO WARES YET" : "NOTHING TONIGHT", UI::Dim);
+    if (sel > n - 1) sel = n > 0 ? n - 1 : 0;
     const int show = 6;   // rows above the details pane
     if (sel < top) top = sel;
     if (sel >= top + show) top = sel - show + 1;
@@ -299,7 +361,7 @@ inline void drawBuild(Canvas& g, const Ctx& c) {
   }
   UI::footerLine(g);
   int x = UI::keyHint(g, 2, "ESC", "BACK", UI::Text);
-  UI::keyHint(g, x, "< >", tabNames[(tab + 1) % 3], UI::Text);
+  UI::keyHint(g, x, "< >", BuildTabNames[(tab + 1) % BuildTabCount], UI::Text);
 }
 
 // ---- The atlas -------------------------------------------------------------------
@@ -313,10 +375,22 @@ inline float atlasEst[Game::Atlas::Max];   // what each well would pay now for y
 
 inline int atlasSorts() { return inRun() ? AtlasSortCount : AtlasSortCount - 1; }
 
+inline bool echoPicking();
+
 // The estimates, worked out when the atlas opens and when the sort changes, never every frame.
-inline void estimateAtlas() {
+// Picking a well for ECHO, each is what the offering would really make: priced
+// where you stand, the way an ECHO offering is (VisitScreens doSell).
+inline void estimateAtlas(const Ctx* c) {
   atlasEstDirty = false;
-  if (inRun()) Game::atlasEstimates(run(), game.atlas, game.playMs / 60000, atlasEst);
+  if (inRun() && c && echoPicking()) {
+    const Game::Run& r = run();
+    const int e = Game::biggestStack(r);
+    const Game::Here h = hereNow(*c);
+    for (int i = 0; i < game.atlas.count; i++) {
+      const Game::WellView w = viewOf(game.atlas.e[i]);
+      atlasEst[i] = e >= 0 && Game::canSell(r, game.atlas, w, e, true) == Game::Why::Ok ? (float)estimateSale(w, h, e) : 0;
+    }
+  } else if (inRun()) Game::atlasEstimates(run(), game.atlas, game.playMs / 60000, atlasEst);
   else for (int i = 0; i < game.atlas.count; i++) atlasEst[i] = 0;
 }
 
@@ -329,8 +403,8 @@ inline bool atlasBefore(int x, int y) {
   return a.visits > b.visits;
 }
 
-inline void sortAtlas() {
-  if (atlasEstDirty) estimateAtlas();
+inline void sortAtlas(const Ctx* c = nullptr) {
+  if (atlasEstDirty) estimateAtlas(c);
   if (atlasSort >= atlasSorts()) atlasSort = 0;
   atlasN = 0;
   for (int i = 0; i < game.atlas.count; i++) {
@@ -355,7 +429,7 @@ inline void updateAtlas(const Ctx& c, const Press& p) {
     sel = 0;
     top = 0;
   }
-  sortAtlas();
+  sortAtlas(&c);
   if (p.back) {
     if (back == Mode::Visit && echoFrom) wellId = echoFrom;   // back to the well ECHO was cast from
     go(back);
@@ -386,7 +460,7 @@ inline void drawAtlasWell(Canvas& g, const Game::AtlasEntry& a) {
   constexpr int Y = 69;
   g.drawFastHLine(0, Y, UI::W, UI::Sep);
   atlasName(a, n);
-  const int e = inRun() ? tonightsEnergy(run(), a.energy) : a.energy;
+  const int e = inRun() ? energyTonight(run(), a.energy) : a.energy;
   UI::text(g, 4, Y + 4, n, UI::energyColor(e));
   UI::textRight(g, UI::W - 4, Y + 4, factionWord(a.faction), UI::factionColor((Faction)a.faction));
   if (a.ward) {   // the ward it was in last time
@@ -430,8 +504,7 @@ inline void drawAtlasWell(Canvas& g, const Game::AtlasEntry& a) {
 }
 
 inline void drawAtlas(Canvas& g, const Ctx& c) {
-  (void)c;
-  sortAtlas();
+  sortAtlas(&c);
   g.fillSprite(UI::Bg);
   char b[48], n[17];
   if (echoPicking()) UI::text(g, 3, 3, "ECHO: OFFER TO WHICH WELL?", UI::SelText);
@@ -450,7 +523,7 @@ inline void drawAtlas(Canvas& g, const Ctx& c) {
     const Game::AtlasEntry& a = game.atlas.e[atlasOrder[i]];
     const int y = 17 + (i - top) * 10;
     if (i == sel) g.fillRect(0, y - 1, UI::W, 10, UI::SelBg);
-    const int e = inRun() ? Game::tonightsEnergy(run(), a.energy) : a.energy;
+    const int e = inRun() ? Game::energyTonight(run(), a.energy) : a.energy;
     UI::energyGlyph(g, 4, y, (Energy)e, UI::energyColor(e));
     atlasName(a, n);
     UI::text(g, 15, y, n, i == sel ? UI::SelText : UI::Text);
@@ -734,11 +807,12 @@ struct StreetEdit {
 };
 inline StreetEdit edit{};
 inline int crossAsk = -1;   // your street waiting for a second ENTER to cross it out
+constexpr const char* CrossAsk = "ENTER AGAIN TO CROSS IT OUT";
 constexpr int StreetShow = 10;
 
 inline bool canAddStreet() {
   const Game::Moments& m = game.moments;
-  return streetsOpen() && m.keepName && m.nStreets < Game::Moments::MaxStreets;
+  return streetsOpen() && m.keepName && streetRoom();
 }
 inline int streetRows() { return StreetCount + game.moments.nStreets + (canAddStreet() ? 1 : 0); }
 inline bool streetsInteractive() { return streetsOpen() && streetRows() > StreetCount; }
@@ -786,6 +860,12 @@ inline void startStreet() {
 
 inline void writeStreetIn() {
   Game::Moments& m = game.moments;
+  if (m.nStreets == Game::Moments::MaxStreets) {   // full: the oldest crossed-out one gives way
+    int k = 0;
+    while (k < m.nStreets && !m.streets[k].crossed) k++;
+    memmove(&m.streets[k], &m.streets[k + 1], sizeof(m.streets[0]) * (m.nStreets - k - 1));
+    m.nStreets--;
+  }
   m.streets[m.nStreets++] = typedStreet();
   m.keepName = 0;
   edit.on = false;
@@ -842,6 +922,7 @@ inline void streetsEnter() {
 inline bool updateStreets(const Press& p) {
   if (edit.on) { typeStreet(p); return true; }
   if (!streetsInteractive()) return false;
+  if (crossAsk >= 0 && !toastSays(CrossAsk)) crossAsk = -1;   // the question goes with its warning
   const int rows = streetRows();
   if (p.down || p.up) {
     crossAsk = -1;
@@ -856,7 +937,7 @@ inline bool updateStreets(const Press& p) {
   Game::Moments& m = game.moments;
   if (own == m.nStreets && canAddStreet()) { startStreet(); return true; }
   if (own >= 0 && own < m.nStreets && !m.streets[own].crossed) {
-    if (crossAsk != own) { crossAsk = own; toast("ENTER AGAIN TO CROSS IT OUT", UI::Rec); return true; }
+    if (crossAsk != own) { crossAsk = own; toast(CrossAsk, UI::Rec, 3.0f); return true; }
     m.streets[own].crossed = 1;
     crossAsk = -1;
     save(true);
@@ -1067,6 +1148,7 @@ enum MenuItem : uint8_t { MContinue, MBuild, MSpells, MAtlas, MGrimoire, MStory,
 inline MenuItem menuItems[MCount];
 inline int nMenu = 0;
 inline bool confirmAbandon = false;
+constexpr const char* AbandonAsk = "ENTER AGAIN TO GIVE UP THE WEEK";
 
 inline void buildMenu() {
   nMenu = 0;
@@ -1089,6 +1171,7 @@ inline void unaskAbandon() {
 
 inline void updateMenu(const Ctx& c, const Press& p) {
   buildMenu();
+  if (confirmAbandon && !toastSays(AbandonAsk)) confirmAbandon = false;   // and the question goes when its warning does
   if (p.back) { unaskAbandon(); go(listMode); return; }
   if (p.down && sel < nMenu - 1) { sel++; unaskAbandon(); }
   if (p.up && sel > 0) { sel--; unaskAbandon(); }
@@ -1103,7 +1186,7 @@ inline void updateMenu(const Ctx& c, const Press& p) {
     case MWalk: back = Mode::Menu; go(Mode::Walk); break;
     case MBind: go(Mode::Bind); break;
     case MAbandon:
-      if (!confirmAbandon) { confirmAbandon = true; toast("ENTER AGAIN TO GIVE UP THE WEEK", UI::Rec); break; }
+      if (!confirmAbandon) { confirmAbandon = true; toast(AbandonAsk, UI::Rec, 3.0f); break; }
       confirmAbandon = false;
       lose();
       break;

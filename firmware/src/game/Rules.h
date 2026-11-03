@@ -38,7 +38,9 @@ struct Sale {
   int vi;                // visits already used tonight
   int lastE;             // energy of the last sale, -1 for none
   bool ghost;            // Ghost key at a hidden well: counts as every energy
+  bool tired;            // the Ash Pact: the same energy as the offering before, tonight (in what was padding)
 };
+static_assert(sizeof(Sale) == offsetof(Sale, ghost) + 4, "Sale is saved with the recent sales: tired must sit in the old padding");
 
 inline void clearSale(Sale& c) {
   memset(&c, 0, sizeof(c));
@@ -114,7 +116,7 @@ inline void effect(int id, Sale& c, const Run& r) {
     case R_unseen_hand: if (c.hidden) c.x *= 2.5; break;
     case R_close_call: if (c.strong) c.mult += 3; break;
     case R_leyline: c.units *= 1.2; c.price *= 1.2; break;
-    case R_channel_surfer: if (c.channel != 1 && c.channel != 6 && c.channel != 11) c.x *= 1.75; break;
+    case R_channel_surfer: if (c.channel != 0 && c.channel != 1 && c.channel != 6 && c.channel != 11) c.x *= 1.75; break;   // 0: not known (ECHO)
     case R_overclock: c.x *= 1.5; break;
     case R_twin_wells: if (c.mesh) c.repeats += c.mesh - 1; break;
     case R_first_bell: if (c.vi == 0) c.mult += 8; break;
@@ -154,6 +156,11 @@ inline void effect(int id, Sale& c, const Run& r) {
     case R_key_ring: if (c.revisit) c.x *= 1 + 0.25 * c.nightsSeen; break;
     case R_thermos: if (c.e == Hush || c.ghost) c.units += 4; break;
     case R_locked_diary: c.x *= 1 + r.state[R_locked_diary]; break;
+    case R_pedometer: c.mult += r.state[R_pedometer]; break;
+    case R_mixtape: c.mult += r.state[R_mixtape]; break;
+    case R_rain_gauge: c.price += r.state[R_rain_gauge]; break;
+    case R_prism_jar: c.x *= 1 + r.state[R_prism_jar]; break;
+    case R_seed_vault: c.x *= 1 + r.state[R_seed_vault]; break;
     case R_tote_bag: if (c.units >= 12) c.repeats += 1; break;
     case R_seashell: if (c.wardChanged) c.repeats += 1; break;
     case R_earplugs: c.mult += 4 * (1 - c.noise); break;
@@ -167,20 +174,46 @@ inline void effect(int id, Sale& c, const Run& r) {
 }
 
 // A record of a sale as it plays out, step by step, for the show on screen.
+// Every change to Units, Thirst or Amp gets a step, so the three numbers on
+// screen always multiply to the total.
 struct Trace {
   enum Field : uint8_t { Units, Price, Mult, X, Repeats };
-  enum Source : uint8_t { FromAttune = 0xFD, FromGlyph = 0xFE };
-  struct Step { uint8_t source; uint8_t field; int8_t ed; double after; };   // ed: an edition's shine, -1 none
+  // Steps that aren't a relic: tonight's Omen, VEIL, the ward, the Ash Pact, Attunement, a glyph.
+  enum Source : uint8_t { FromPact = 0xF9, FromWard = 0xFA, FromVeil = 0xFB, FromOmen = 0xFC, FromAttune = 0xFD, FromGlyph = 0xFE };
+  enum Twice : uint8_t { Once, Copied, Overtone };   // a relic that fired again: Copycat sigil or Overtone
+  struct Step { uint8_t source; uint8_t field; int8_t ed; uint8_t twice; double after; };   // ed: an edition's shine, -1 none
   static constexpr int Max = 40;
   Step s[Max];
   int n;
   double units0, price0, mult0;
-  void note(uint8_t source, const Sale& before, const Sale& after, int ed = -1) {
+  bool tangled;          // TANGLED LINES: Amp is baseMult x X + (Mult - baseMult)
+  double baseMult;       // Amp before the glyph and the phase relics, for TANGLED LINES
+  int8_t ward;           // where it was offered, for a ward's step
+  void note(uint8_t source, const Sale& before, const Sale& after, int ed = -1, uint8_t twice = Once) {
     const double b[5] = {before.units, before.price, before.mult, before.x, before.repeats};
     const double a[5] = {after.units, after.price, after.mult, after.x, after.repeats};
-    for (int f = 0; f < 5 && n < Max; f++) if (a[f] != b[f]) s[n++] = Step{source, (uint8_t)f, (int8_t)ed, a[f]};
+    for (int f = 0; f < 5 && n < Max; f++) if (a[f] != b[f]) s[n++] = Step{source, (uint8_t)f, (int8_t)ed, twice, a[f]};
   }
+  // Amp as the offering counts it, from the Amp and multiplier so far.
+  double amp(double mult, double x) const { return tangled ? baseMult * x + (mult - baseMult) : mult * x; }
 };
+
+// The relic Copycat sigil would copy: the best other relic you hold, the
+// rarest, then the latest phase. -1 for none. (The stall asks this before it's yours.)
+inline int copycatPick(const Run& r) {
+  using namespace Cat;
+  int copyOf = -1, bestRank = -1, bestPhase = -1;
+  for (int i = 0; i < r.nRelics; i++) {
+    const int id = r.relics[i].id;
+    if (!Relics[id].hasFn) continue;
+    const int rk = rarityRank(id), ph = Relics[id].phase;
+    if (rk > bestRank || (rk == bestRank && ph > bestPhase)) { copyOf = id; bestRank = rk; bestPhase = ph; }
+  }
+  return copyOf;
+}
+
+// What Copycat sigil copies right now: -1 unless you hold it.
+inline int copycatTarget(const Run& r) { return owns(r, Cat::R_copycat_sigil) ? copycatPick(r) : -1; }
 
 // One relic firing, scaled up by its Polish tier: each tier makes what it
 // added 50% bigger.
@@ -213,38 +246,40 @@ struct SaleResult {
 inline SaleResult score(Sale& c, const Run& r, Trace* trace = nullptr) {
   using namespace Cat;
   Sale before;
-  auto note = [&](uint8_t src, int ed = -1) { if (trace) { trace->note(src, before, c, ed); } };
+  auto note = [&](uint8_t src, int ed = -1, uint8_t twice = Trace::Once) { if (trace) { trace->note(src, before, c, ed, twice); } };
   auto mark = [&]() { if (trace) before = c; };
   const int om = r.n.omen, ecl = r.n.eclipse;
-  if (om == Omen_fade && c.e == r.n.fadeE) c.price *= 0.5;
-  if (om == Omen_silent_bell && c.vi < 2) {
-    if (trace) { trace->n = 0; trace->units0 = c.units; trace->price0 = c.price; trace->mult0 = c.mult; }
-    return {0, 0};
-  }
-  if (r.n.veil && c.e == Static) c.price += 3;
-  const double glyphK = (owns(r, R_keystone) ? 2 : 1) * (isCalling(r, Calling_cartomancer) ? 1.5 : 1);
-  if (c.glyph == Glyph_deep) c.units += 5 * glyphK;
   if (trace) {
     trace->n = 0;
     trace->units0 = c.units;
     trace->price0 = c.price;
+    trace->mult0 = c.mult;
+    trace->tangled = false;
+    trace->baseMult = c.mult;
+  }
+  mark();
+  if (c.tired) c.price *= rules.tire;   // the Ash Pact
+  note(Trace::FromPact);
+  mark();
+  if (om == Omen_fade && c.e == r.n.fadeE) c.price *= 0.5;
+  note(Trace::FromOmen);
+  if (om == Omen_silent_bell && c.vi < 2) return {0, 0};
+  mark();
+  if (r.n.veil && c.e == Static) c.price += 3;
+  note(Trace::FromVeil);
+  const double glyphK = (owns(r, R_keystone) ? 2 : 1) * (isCalling(r, Calling_cartomancer) ? 1.5 : 1);
+  mark();
+  if (c.glyph == Glyph_deep) c.units += 5 * glyphK;
+  note(Trace::FromGlyph);
+  if (trace) {
     // Attunement is the base every later multiplier multiplies, so the show
     // lists it as the first Amp step (ATTUNED +N) rather than folding it in.
     trace->mult0 = c.lvl > 0 ? 1 : c.mult;
-    if (c.lvl > 0 && c.mult != 1) trace->s[trace->n++] = Trace::Step{Trace::FromAttune, Trace::Mult, -1, c.mult};
+    if (c.lvl > 0 && c.mult != 1 && trace->n < Trace::Max)
+      trace->s[trace->n++] = Trace::Step{Trace::FromAttune, Trace::Mult, -1, Trace::Once, c.mult};
   }
 
-  // Copycat sigil copies the best other relic (rarest, then latest phase).
-  int copyOf = -1;
-  if (owns(r, R_copycat_sigil)) {
-    int bestRank = -1, bestPhase = -1;
-    for (int i = 0; i < r.nRelics; i++) {
-      const int id = r.relics[i].id;
-      if (!Relics[id].hasFn) continue;
-      const int rk = rarityRank(id), ph = Relics[id].phase;
-      if (rk > bestRank || (rk == bestRank && ph > bestPhase)) { copyOf = id; bestRank = rk; bestPhase = ph; }
-    }
-  }
+  const int copyOf = copycatTarget(r);
   auto tierOf = [&](const OwnedRelic& x) { return r.n.noPolish ? x.tier / 2 : (int)x.tier; };
 
   const double priceBefore = c.price;
@@ -254,11 +289,14 @@ inline SaleResult score(Sale& c, const Run& r, Trace* trace = nullptr) {
       mark();
       fire(x.id, c, r, tierOf(x));
       if (x.id == copyOf) fire(x.id, c, r, tierOf(x));
-      note(x.id);
+      note(x.id, -1, x.id == copyOf ? Trace::Copied : Trace::Once);
     }
   }
+  mark();
   if (om == Omen_iron_price && c.price > priceBefore) c.price = priceBefore + (c.price - priceBefore) / 2;
+  note(Trace::FromOmen);
   const double baseMult = c.mult;
+  if (trace) { trace->tangled = om == Omen_tangled; trace->baseMult = baseMult; }
   mark();
   if (c.glyph == Glyph_lit) c.mult += 4 * glyphK;
   if (c.glyph == Glyph_bound) c.x *= 1 + 0.5 * glyphK;
@@ -281,7 +319,7 @@ inline SaleResult score(Sale& c, const Run& r, Trace* trace = nullptr) {
         fire(x.id, c, r, tierOf(x));
         if (dim && xb != 0 && c.x > xb) c.x = xb * (1 + (c.x / xb - 1) * 0.75);
       }
-      note(x.id);
+      note(x.id, -1, x.id == copyOf ? Trace::Copied : times == 2 ? Trace::Overtone : Trace::Once);
     }
   }
   double res;

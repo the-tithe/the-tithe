@@ -246,10 +246,29 @@ int main() {
   BootScreen::draw(canvas, 2.2f, info);  save("boot_3");
   info.card = false;
   BootScreen::draw(canvas, 2.2f, info);  save("boot_nocard");
+  // Cards that mount nowhere but a launcher: each says what it is.
+  info.cardWord = "EXFAT";
+  BootScreen::draw(canvas, 2.2f, info);  save("boot_card_exfat");
+  info.cardWord = "NO WRITE";
+  BootScreen::draw(canvas, 2.2f, info);  save("boot_card_nowrite");
+  info.cardWord = nullptr;
+  // A first boot on a Cardputer without a motion sensor: new keys, no moves, neither a fault.
+  info = BootScreen::Info{true, true, false};
+  info.keysNew = true;
+  BootScreen::draw(canvas, 2.2f, info);  save("boot_first_noimu");
+  // New keys with a save to load: its wells won't be known.
+  info = BootScreen::Info{true, true, true};
+  info.keysNew = info.keysLost = true;
+  BootScreen::draw(canvas, 2.2f, info);  save("boot_keys_lost");
+  BootScreen::drawStop(canvas, "THIS SAVE IS FROM A NEWER TITHE", "INSTALL THE NEWER BUILD");  save("boot_stop_newer");
+  BootScreen::drawStop(canvas, "NOT ENOUGH MEMORY TO LOAD THE SAVE", "SWITCH IT OFF AND ON AGAIN");  save("boot_stop_memory");
 
   Status st = status();
   sky.reset(0);
   ScannerScreen::draw(canvas, sky, st, 0.3f);  save("scan_listening");
+  st.deaf = true;
+  ScannerScreen::draw(canvas, sky, st, 0.3f);  save("scan_deaf");
+  st.deaf = false;
 
   // A busy street: 16 routers, a few dropping out, two found late.
   FakeRouter r[48];
@@ -311,6 +330,30 @@ int main() {
   p = Press();
   ScannerScreen::update(p, sky);
   ScannerScreen::draw(canvas, sky, st, 0.5f);  save("scan_nexus");
+  {   // the hint star on a well further down than the screen shows
+    static const WellRec* list[Sightings::MaxWells];
+    const int n = sky.listed(list, Sightings::MaxWells);
+    st.starId = n > 12 ? list[12]->id : 0;
+    ScannerScreen::draw(canvas, sky, st, 0.5f);  save("scan_star_below");
+    st.starId = 0;
+  }
+  {   // the count says Quarter before two scans agree: the held ward, and where it's going
+    Sightings s2;
+    s2.reset(0);
+    FakeRouter q[16];
+    makeRouters(q, 16);
+    uint32_t t = 0;
+    for (int k = 0; k < 4; k++) { t += 2500; s2.ingest(nets, toNets(q, 6, nets, 0), t); }
+    t += 2500;
+    s2.ingest(nets, toNets(q, 14, nets, 0), t);
+    Status s3 = status();
+    s3.nowMs = t;
+    ScannerScreen::draw(canvas, s2, s3, 0.5f);  save("scan_ward_pending");
+    // and with everything else the header can hold
+    s3.inRun = true; s3.wardens = true; s3.heat = 3.4; s3.wardLeft = 30; s3.adrift = true; s3.battery = 100;
+    s3.tithe = 410; s3.total = 120; s3.visitsLeft = 7; s3.coin = 23;
+    ScannerScreen::draw(canvas, s2, s3, 0.5f);  save("scan_ward_pending_full");
+  }
 
   // A Hollow with two wells and no card.
   sky.reset(0);

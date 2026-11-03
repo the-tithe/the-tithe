@@ -30,6 +30,7 @@
 #include "Effects.h"
 #include "Imu.h"
 #include "Input.h"
+#include "MemLog.h"
 #include "Mic.h"
 #include "Persist.h"
 #include "SaveStore.h"
@@ -58,6 +59,7 @@ static bool bootCheck = false;       // still to compare them with what's heard 
 static uint32_t bootPlayMs = 0;      // the play clock the save came back with
 static uint32_t nextNoteAt = 0;
 constexpr uint32_t NoteEveryMs = 60000;
+static Game::SaveFormat::Boot bootSave = Game::SaveFormat::Boot::Fresh;   // what the boot made of the save
 
 constexpr uint8_t Bright = 150;
 constexpr uint8_t DimBright = 25;
@@ -73,9 +75,23 @@ static void hookTone(int hz, int ms) {
   if (!Persist::muted && !veiled) M5Cardputer.Speaker.tone(hz, ms);
 }
 
+// A save that didn't reach flash, or a card backup that failed, is said once a session.
 static void writeSave(bool backup) {
-  SaveStore::save(App::game, millis(), backup);
+  static bool saidFlash = false, saidCard = false, saidKept = false;
+  const SaveStore::Wrote w = SaveStore::save(App::game, millis(), backup);
   saveDue = false;
+  if (SaveStore::flashOk && !w.flash && !saidFlash) {
+    saidFlash = true;
+    App::toastAfter(w.card ? "SAVE FAILED: ONLY THE CARD HAS IT" : "SAVE FAILED", UI::Rec, 3.0f);
+  }
+  if (w.cardKept && !saidKept) {
+    saidKept = true;
+    App::toastAfter("NEWER SAVE ON THE CARD: RESTART", UI::Rec, 3.0f);
+  }
+  if (w.cardFailed && !saidCard) {   // it's tried again every 30 s
+    saidCard = true;
+    App::toastAfter(SaveStore::flashOk ? "CARD BACKUP STOPPED" : "CARD FAILED: NOTHING IS SAVED", UI::Rec, 3.0f);
+  }
 }
 
 static void hookSave(bool now) {
@@ -332,12 +348,9 @@ static void onBeacons(uint32_t now) {
     const uint32_t off = Game::offMinutes(bootNote, bootPlayMs, secs);
     const int settled = off ? Game::settleFor(App::game.atlas, off, App::game.playMs / 60000) : 0;
     logClock(m, n, secs, off, settled);
+    if (secs < 0) App::noteOffUnknown(Game::settling(App::game.atlas, App::game.playMs / 60000));
     if (off) {
-      char b[32];
-      if (off >= 60) snprintf(b, sizeof(b), "OFF FOR %luH %02luM", (unsigned long)(off / 60), (unsigned long)(off % 60));
-      else snprintf(b, sizeof(b), "OFF FOR %lu MIN", (unsigned long)off);
-      App::toast(b, 0, 3.0f);
-      App::noteOff(off);
+      App::noteOff(off, settled);
       if (settled) writeSave(false);
     }
   }
@@ -354,11 +367,38 @@ static void onBeacons(uint32_t now) {
 
 // ---- Setup and the frame loop ---------------------------------------------------
 
+static const char* bootName(Game::SaveFormat::Boot b) {
+  using B = Game::SaveFormat::Boot;
+  switch (b) {
+    case B::Fresh: return "new";
+    case B::Flash: return "flash";
+    case B::Card: return "sd backup";
+    case B::CardNewer: return "sd backup, newer than flash";
+    case B::CardDamaged: return "sd backup, flash damaged";
+    case B::SetAside: return "new, old save set aside";
+    case B::Newer: return "stopped: a newer Tithe's save";
+    case B::NoMemory: return "stopped: no memory to load it";
+  }
+  return "?";
+}
+
+// The save can't be loaded and mustn't be written over: say so, and do nothing else.
+static bool stopped() { return SaveStore::locked; }
+static void drawStopped() {
+  if (bootSave == Game::SaveFormat::Boot::Newer)
+    BootScreen::drawStop(canvas, "THIS SAVE IS FROM A NEWER TITHE", "INSTALL THE NEWER BUILD");
+  else
+    BootScreen::drawStop(canvas, "NOT ENOUGH MEMORY TO LOAD THE SAVE", "SWITCH IT OFF AND ON AGAIN");
+  canvas.pushSprite(0, 0);
+}
+
 void setup() {
   auto cfg = M5.config();
   cfg.serial_baudrate = 115200;
   Serial.setTxBufferSize(1024);   // room for a whole console reply
   M5Cardputer.begin(cfg, true);
+  MemLog::watchFailures();
+  MemLog::mark("start");
   // Wipe the panel's whole memory once, not just the 240x135 we draw into:
   // rows just outside it can show whatever the launcher left there.
   if (auto* panel = M5Cardputer.Display.getPanel()) {
@@ -379,22 +419,43 @@ void setup() {
   canvas.setColorDepth(16);
   if (!canvas.createSprite(Config::ScreenW, Config::ScreenH)) Serial.println("[tithe] no memory for the screen");
   M5Cardputer.Speaker.setVolume(110);
+  MemLog::mark("screen");
 
-  App::bootInfo.ears = Scanner::begin();
+  // Storage and the save come before the radio, while memory is still whole:
+  // the WiFi stack takes tens of KB and the card's mount needs one big block.
+  // A Deck with no key yet starts the radio first, since making the key needs it.
+  const bool hadKey = Persist::begin();
+  if (!hadKey) {
+    App::bootInfo.ears = Scanner::begin();
+    Persist::makeKey();
+  }
+  SaveStore::begin();
+  App::bootInfo.card = SDCard::ensure();
+  App::bootInfo.cardWord = SDCard::word();
+  MemLog::mark("card");
+
+  // The game: the newer of the flash copy and the SD backup, else a new career.
+  Game::SaveFormat::Load why;
+  bootSave = SaveStore::load(App::game, Keys::deckTag(), why);
+  MemLog::mark("save");
+
+  if (hadKey) App::bootInfo.ears = Scanner::begin();
+  MemLog::mark("radio");
   Imu::begin();
   App::bootInfo.balance = Imu::available;
-  Persist::begin();
-  App::bootInfo.card = SDCard::ensure();
   if (App::bootInfo.card) WalkLog::start();
   else WalkLog::state = Status::Log::NoCard;
   sky.reset(millis());
   st.muted = Persist::muted;
-
-  // The game: from flash, else the SD backup, else a new career.
-  SaveStore::begin();
-  Game::SaveFormat::Load why;
-  const char* from = SaveStore::load(App::game, why);
-  if (!from) App::newGame();
+  using B = Game::SaveFormat::Boot;
+  const bool loaded = bootSave == B::Flash || Game::SaveFormat::fromCard(bootSave);
+  if (!loaded) App::newGame();
+  const uint16_t tag = App::game.moments.deckTag;
+  App::bootInfo.keysNew = Persist::keyNew;
+  App::bootInfo.keysLost = Persist::keyNew && loaded;   // every well that save knows reads as new now
+  App::sayBoot(bootSave, SaveStore::flashOk, loaded && tag && tag != Keys::deckTag() && !Persist::keyNew);
+  App::sayStorage(SDCard::fix(), SDCard::health != SDCard::CardState::None, SaveStore::keeping());
+  App::game.moments.deckTag = Keys::deckTag();
   bootPlayMs = App::game.playMs;
   bootCheck = Persist::clockNote(bootNote) && bootNote.n > 0;
   App::hooks.tone = hookTone;
@@ -409,10 +470,11 @@ void setup() {
   App::go(App::Mode::Boot);
   lastKeyMs = millis();
   lastFrameUs = micros();
+  MemLog::boot(Config::Version, bootName(bootSave), SaveStore::flashArea, Persist::keyKept);
   Serial.printf("[tithe] fw %s, deck %04x, radio %s, motion %s, card %s, walk %lu, game %s (%s), free heap %u\n",
                 Config::Version, Keys::deckTag(), App::bootInfo.ears ? "ok" : "FAILED",
                 Imu::available ? "ok" : "none", App::bootInfo.card ? "ok" : "none", (unsigned long)WalkLog::walk,
-                from ? from : "new", Game::SaveFormat::loadText(why), (unsigned)ESP.getFreeHeap());
+                bootName(bootSave), Game::SaveFormat::loadText(why), (unsigned)ESP.getFreeHeap());
 }
 
 static void handleMotion(Press& p, uint32_t now) {
@@ -443,7 +505,9 @@ static void handleMotion(Press& p, uint32_t now) {
       dimmed = true;   // put away: dim at once
       M5Cardputer.Display.setBrightness(DimBright);
     }
-    if (!veiled && !dimmed && App::mode != App::Mode::Boot) {
+    // Not mid-draw, mid-show or at the stall: a shaky hand there isn't a gesture,
+    // and an accidental TWIST would spend the Night's only ward.
+    if (!veiled && !dimmed && !App::ceremonyScreen()) {
       if (mo.flick) {   // a pulse: listen again, and the Hush wells ring out
         pulseT = 0;
         ringLeft = 4;
@@ -451,10 +515,9 @@ static void handleMotion(Press& p, uint32_t now) {
         hookTone(1568, 40);
         App::overhear(ctx(), esp_random(), true);
       }
-      if (mo.twist) {   // a ward
+      if (mo.twist && App::twist(ctx())) {   // a ward: only a real one shows its sigil
         wardT = 0;
         hookTone(392, 120);
-        App::twist(ctx());
       }
     }
   }
@@ -466,6 +529,12 @@ static void handleMotion(Press& p, uint32_t now) {
 
 void loop() {
   M5Cardputer.update();
+  if (stopped()) {
+    drawStopped();
+    pollConsole();
+    delay(100);
+    return;
+  }
   const uint32_t frameUs = micros();
   if (Capture::lockstep) {
     pollConsole();
@@ -473,6 +542,13 @@ void loop() {
   }
   float dt = (frameUs - lastFrameUs) / 1e6f;
   lastFrameUs = frameUs;
+  static uint32_t nextMemCheck = 60000;
+  if ((int32_t)(millis() - nextMemCheck) >= 0) {
+    nextMemCheck = millis() + 60000;
+    MemLog::check(Config::Version, App::game.playMs / 1000, Scanner::waited);
+  }
+  // A card that failed is tried again every 30 s (SDCard::retry).
+  if (!SDCard::ready && SDCard::retry(millis())) MemLog::cardBack(Config::Version, App::game.playMs / 1000);
   if (dt > 0.1f) dt = 0.1f;
   if (Capture::lockstep) dt = Capture::StepDt;
   clock_ += dt;
@@ -507,6 +583,9 @@ void loop() {
   st.listening = Scanner::running;
   st.nowMs = now;
   st.gyro = Imu::available;
+  st.awake = !dimmed && !veiled;
+  st.deaf = !App::bootInfo.ears;
+  st.unsaved = !SaveStore::keeping();
   // Hush wells surface after a second of stillness, fully after three, or
   // for a few seconds after a pulse. Once surfaced they linger, fading over
   // HushLinger seconds, so pressing keys to pick one doesn't wipe it away.

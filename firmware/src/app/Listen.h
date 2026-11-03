@@ -62,17 +62,6 @@ inline bool soundDue(uint32_t at, uint32_t gap) { return at == 0 || soundMs - at
 
 // Where the walk's sounds belong.
 inline bool listeningScreen() { return mode == Mode::Scanner || mode == Mode::Glass || mode == Mode::Well || mode == Mode::Walk; }
-// Screens with a ceremony of their own: nothing from the walk plays over them.
-inline bool ceremonyScreen() {
-  switch (mode) {
-    case Mode::Boot: case Mode::Dowse: case Mode::Drawing: case Mode::Show: case Mode::NightStart: case Mode::NightEnd:
-    case Mode::OutOfVisits: case Mode::Shop: case Mode::ShopDrop: case Mode::ShopAttune: case Mode::ShopForget:
-    case Mode::Won: case Mode::Lost: case Mode::Reveal: case Mode::Bind: case Mode::Premise:
-      return true;
-    default: return false;
-  }
-}
-
 // Past the walk's free tunes, a well sings only if it's never been heard by
 // this Deck, or you've worked it.
 inline bool worthATune(const WellRec& w) {

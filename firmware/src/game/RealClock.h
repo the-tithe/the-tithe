@@ -85,4 +85,11 @@ inline int settleFor(Atlas& atlas, uint32_t minutes, uint32_t playMin) {
   return settledNow;
 }
 
+// Wells still settling at play minute `playMin`.
+inline int settling(const Atlas& atlas, uint32_t playMin) {
+  int k = 0;
+  for (int i = 0; i < atlas.count; i++) k += atlas.e[i].lastPlay + SettleMin > playMin;
+  return k;
+}
+
 } // namespace Game

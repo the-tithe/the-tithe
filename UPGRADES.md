@@ -85,7 +85,7 @@ In-between places. Suburbs, quiet streets, home.
 | **Porch light**<br>*Someone left it on for you.* | Common | +4 Thirst at Hearth wells (home networks) | Start |
 | **Spare key**<br>*Under the mat, where it always is.* | Common | +1 Amp for every 10 standing with the Hearth | Start |
 | **Threshold**<br>*Every doorway is a little spell.* | Uncommon | ×1.5 Amp if you've changed wards since your last visit | Change wards 8 times in one Night |
-| **Picket fence**<br>*Every house on the street knows you.* | Uncommon | Gains +0.25 Amp for every offering at a Hearth well | Make offerings at 30 Hearth wells |
+| **Picket fence**<br>*Every house on the street knows you.* | Uncommon | Gains +0.75 Amp for every offering at a Hearth well | Make offerings at 30 Hearth wells |
 | **Garden gate**<br>*Never quite shut. Never quite open.* | Uncommon | x1.5 Amp in a Fringe ward, x2 if you just changed wards | Start |
 
 ### Wayfaring
@@ -95,11 +95,11 @@ Finding wells you've never visited.
 | Relic | Rarity | Effect | Unlock |
 |---|---|---|---|
 | **Long walk**<br>*The legs remember what the map forgets.* | Common | +0.25 Amp per ward entered tonight | Start |
-| **First light**<br>*New wells are always the sweetest.* | Common | +4 Amp at a well you've never visited before | Find 25 new wells in one week |
+| **First light**<br>*New wells are always the sweetest.* | Common | +4 Amp at a well you've never offered at | Find 25 new wells in one week |
 | **Postcard**<br>*Wish you were here. You were, for a minute.* | Common | +1 Amp for each new well you've found tonight | Find 5 new wells in one Night |
 | **Cartographer**<br>*Ink, mostly. And a little blood.* | Uncommon | +1 Thirst for every 6 new wells found this week | Start |
-| **Wanderlust**<br>*Somewhere else is always louder.* | Uncommon | ×1.5 Amp at a well you've never visited before | Find 8 new wells in one Night |
-| **Pilgrim's staff**<br>*Worn smooth by a hundred doorways.* | Rare | Gains ×0.05 Amp for every new well you find. Never resets. | Find 100 different wells, across all weeks |
+| **Wanderlust**<br>*Somewhere else is always louder.* | Uncommon | ×1.5 Amp at a well you've never offered at | Find 8 new wells in one Night |
+| **Pilgrim's staff**<br>*Worn smooth by a hundred doorways.* | Rare | Gains ×0.15 Amp for every new well you find. Never resets. | Find 100 different wells, across all weeks |
 
 ### Refrain
 
@@ -107,13 +107,13 @@ Going back to the same wells, day after day.
 
 | Relic | Rarity | Effect | Unlock |
 |---|---|---|---|
-| **Hearthstone**<br>*Warm from your hand, every morning.* | Common | +3 Units at a well you've visited before | Start |
+| **Hearthstone**<br>*Warm from your hand, every morning.* | Common | +3 Units at a well you offered at on an earlier Night | Start |
 | **Commuter's charm**<br>*Same train, same well, same luck.* | Uncommon | ×1.5 Amp at a well you've visited on 3+ Nights (×2 from Night 5) | Start |
 | **Well-worn path**<br>*Your footprints are the floor now.* | Uncommon | +1 Amp for each Night you've visited this well | Visit the same well on all 7 Nights |
 | **Chalk stub**<br>*Worn to a nub on other people's walls.* | Uncommon | x1.5 Amp at a well you've carved a glyph into | Start |
 | **Bus pass**<br>*Punched every morning. Never missed one.* | Uncommon | Offerings count twice at wells you've visited every Night | Hold 2 weeks |
 | **Keystone**<br>*Carve it deep enough and the city carves back.* | Rare | Your glyphs are twice as strong | Carve 10 glyphs |
-| **Key ring**<br>*A key for every door that ever let you in.* | Rare | At wells you've visited before: x(1 + 0.25 per Night there) | Hold a week with Hearthstone |
+| **Key ring**<br>*A key for every door that ever let you in.* | Rare | At wells you offered at on an earlier Night: x(1 + 0.25 per Night there) | Hold a week with Hearthstone |
 
 ### Elemental
 
@@ -139,8 +139,10 @@ A bit of every energy.
 |---|---|---|---|
 | **Mixed blessing**<br>*A little of everything, a lot of luck.* | Common | +3 Thirst when your hold carries 3+ kinds of energy | Start |
 | **Odd socks**<br>*They match. Just not each other.* | Common | +4 Amp when you offer a different energy than last time | Start |
+| **Mixtape**<br>*Side A, side B, side A.* | Common | Gains +3 Amp whenever you switch energy. Never resets. | Start |
 | **Prism wheel**<br>*Turn it and the light changes color.* | Uncommon | +1.5 Amp for each kind of energy you've offered tonight | Offer all five energies in one Night |
 | **Tasting spoon**<br>*Just a little of each. To be sure.* | Uncommon | x2 Amp on the first offering of each energy tonight | Start |
+| **Prism jar**<br>*Five colors under one lid.* | Uncommon | Gains ×0.3 Amp per energy you offer each Night. Never resets. | Start |
 | **Spectrum**<br>*All five colors. The world goes white.* | Rare | ×(1 + 0.3 for each kind of energy offered tonight beyond the first) | Hold a week with Prism wheel |
 | **Charm bracelet**<br>*One charm for every town she left.* | Rare | x(1 + 0.4 per kind of energy in your hold beyond the first) | Hold a week with Mixed blessing |
 
@@ -150,12 +152,12 @@ Static, Heat and the Wardens.
 
 | Relic | Rarity | Effect | Unlock |
 |---|---|---|---|
-| **Static eater**<br>*It hums when it's hungry.* | Common | +5 Thirst on Static. Static never leaks and raises no Heat. | Start |
-| **Smuggler's lining**<br>*The coat is bigger on the inside. Don't ask.* | Uncommon | +5 Units on Static | Offer Static 25 times |
+| **Static eater**<br>*It hums when it's hungry.* | Common | Static turns up more often and gets +5 Thirst. It never leaks or raises Heat. | Start |
+| **Smuggler's lining**<br>*The coat is bigger on the inside. Don't ask.* | Uncommon | +5 Units on Static, and Static turns up more often | Offer Static 25 times |
 | **Devil's meter**<br>*The needle only moves one way.* | Uncommon | ×(1 + Heat) Amp. Wardens show up more often. | Start |
 | **Film canister**<br>*Nothing in here, officer. Just film.* | Uncommon | x2 Amp on Static while Heat is under 1 | Hold a week with Static eater |
-| **Black ledger**<br>*Each line a debt, each debt a promise.* | Rare | Gains ×0.2 Amp every time you offer Static. Never resets. | Offer Static 50 times |
-| **Wanted poster**<br>*Your face, but younger. They used an old photo.* | Rare | ×3 Amp while Heat is 3 or more | Offer Static 75 times |
+| **Black ledger**<br>*Each line a debt, each debt a promise.* | Rare | Static turns up more often. Gains ×0.6 Amp per Static offering. Never resets. | Offer Static 50 times |
+| **Wanted poster**<br>*Your face, but younger. They used an old photo.* | Rare | ×3 Amp while Heat is 3 or more, and Static turns up more often | Offer Static 75 times |
 
 ### Hidden
 
@@ -168,7 +170,7 @@ Hush and hidden networks.
 | **Ghost key**<br>*It opens doors that don't have names.* | Uncommon | +5 Amp at Hush wells, which count as all five energies | Start |
 | **Hush lantern**<br>*Its light makes no sound.* | Rare | ×2 Amp on Hush, and Hush turns up three times as often | Start |
 | **Unseen hand**<br>*Nobody saw. Nobody ever sees.* | Rare | ×2.5 Amp at a Hush well | Find 30 Hush wells |
-| **Locked diary**<br>*The lock is tiny. That's not the point.* | Rare | Gains x0.15 Amp at every Hush well. Never resets. | Hold a week with Hush lantern |
+| **Locked diary**<br>*The lock is tiny. That's not the point.* | Rare | Gains x0.45 Amp at every Hush well. Never resets. | Hold a week with Hush lantern |
 
 ### Machine
 
@@ -177,6 +179,7 @@ The physics of WiFi: mesh, channels, signal strength.
 | Relic | Rarity | Effect | Unlock |
 |---|---|---|---|
 | **Close call**<br>*Close enough to feel it on your teeth.* | Common | +3 Amp when the well's signal is very strong (stand right next to it) | Start |
+| **Rain gauge**<br>*It fills whether anyone checks it or not.* | Common | Gains +1.5 Thirst every time you draw. Never resets. | Start |
 | **Leyline**<br>*The old roads still run under the new ones.* | Uncommon | Units and Thirst ×1.2 | Start |
 | **Channel surfer**<br>*Off the beaten band.* | Uncommon | ×1.75 Amp at a well on an odd channel (not 1, 6 or 11) | Find wells on all 13 channels |
 | **Overclock**<br>*Run it hot. Apologize later.* | Uncommon | ×1.5 Amp on every offering, but 2 fewer visits per Night | Start |
@@ -189,11 +192,12 @@ When in the Night you offer, and how long the week has gone on.
 | Relic | Rarity | Effect | Unlock |
 |---|---|---|---|
 | **First bell**<br>*Whoever rings it first gets heard.* | Common | +8 Amp on the first visit of each Night | Pay a Tithe in a single visit |
-| **Tally stick**<br>*A notch a night. It's getting crowded.* | Common | Gains +1 Amp every time you pay a Tithe. Never resets. | Start |
+| **Tally stick**<br>*A notch a night. It's getting crowded.* | Common | Gains +3 Amp every time you pay a Tithe. Never resets. | Start |
+| **Pedometer**<br>*It counts the walk, not the reason.* | Common | Gains +0.9 Amp for every offering you make. Never resets. | Start |
 | **Night shift**<br>*The later it gets, the better you get.* | Uncommon | +0.5 Amp for each visit already used tonight | Start |
 | **Witching hour**<br>*Midnight is a door. Walk out rich.* | Uncommon | On the visit that closes the Night, ×3 Amp | Start |
-| **Ritual candle**<br>*It burns longer each night. Don't ask.* | Uncommon | Gains ×0.15 Amp every time you pay a Tithe. Never resets. | Pay 20 Tithes |
-| **Patience**<br>*The Hum pays those who don't need it.* | Rare | Gains +1 Amp per visit left unused when a Night closes. Never resets. | Pay 3 Tithes in a row with 6+ visits to spare |
+| **Ritual candle**<br>*It burns longer each night. Don't ask.* | Uncommon | Gains ×0.45 Amp every time you pay a Tithe. Never resets. | Pay 20 Tithes |
+| **Patience**<br>*The Hum pays those who don't need it.* | Rare | Gains +3 Amp per visit left unused when a Night closes. Never resets. | Pay 3 Tithes in a row with 6+ visits to spare |
 
 ### Echo
 
@@ -230,8 +234,9 @@ Coin turned into Resonance.
 | **Laundromat token**<br>*Good for one load. Never once used for laundry.* | Common | +1 Amp for every 5 coin you hold (up to +4) | Start |
 | **Bus fare**<br>*Exact change, and not a token more.* | Common | +5 Amp while you hold 4 coin or less | Leave a stall with 0 coin |
 | **Hoard**<br>*It isn't about spending it. It never was.* | Uncommon | ×(1 + 0.02 per coin held), up to ×2 | Hold 40 coin at once |
-| **Piggy bank**<br>*Shake it. It sounds like next week.* | Uncommon | Gains +0.5 Amp per coin of interest you earn. Never resets. | Hold 25 coin at once |
-| **Long receipt**<br>*Itemized, folded twice, kept for no reason.* | Rare | x(1 + 0.05 per coin spent at the last stall), up to x3 | Buy 3 rare relics |
+| **Piggy bank**<br>*Shake it. It sounds like next week.* | Uncommon | Gains +1.5 Amp per coin of interest you earn. Never resets. | Hold 25 coin at once |
+| **Seed vault**<br>*Nothing grows in there while you keep opening it.* | Uncommon | Gains ×0.3 Amp per coin of interest you earn. Never resets. | Start |
+| **Long receipt**<br>*Itemized, folded twice, kept for no reason.* | Rare | x(1 + 0.05 per coin spent at the last stall, minus sales), up to x3 | Buy 3 rare relics |
 
 ### Cursed
 
@@ -240,7 +245,7 @@ Big upside, with a catch.
 | Relic | Rarity | Effect | Unlock |
 |---|---|---|---|
 | **Hungry coin**<br>*Feed it and it feeds you. Mostly.* | Uncommon | +6 Amp, but it eats 2 coin every visit | Leave a stall with 0 coin |
-| **One-way ticket**<br>*Nobody buys these by accident.* | Uncommon | x2.5 Amp, but wells you've visited before earn nothing | Find 40 new wells in one week |
+| **One-way ticket**<br>*Nobody buys these by accident.* | Uncommon | x2.5 Amp, but wells you offered at on an earlier Night earn nothing | Find 40 new wells in one week |
 | **Glass crown**<br>*Heavy is the head, until it shatters.* | Rare | ×3 Amp on every offering, but one energy is worthless each Night | Hold a week |
 | **Blood moon**<br>*The Hum notices when you get greedy. It gets greedy back.* | Rare | ×3 Amp, but every Tithe is 35% higher | Hold a week on the Iron Pact |
 | **Empty frame**<br>*Nobody in it yet. Keep it that way.* | Rare | x(1 + 0.5 for each empty relic slot) | Pay 5 Tithes at 3x or more |
@@ -254,7 +259,7 @@ Only from the SUMMON spell or a Conjunction Portent.
 | **The Grid Saint**<br>*She was a switchboard once. Now she is the switchboard.* | ×(1 + 0.1 per well in range) | Hold a week with 2 Throng relics |
 | **The Unheard**<br>*...* | Every well counts as hidden. ×2 Amp on Hush. | Hold a week with 2 Hidden relics |
 | **Seven-league boots**<br>*One step, one ward. Mind the curb.* | ×0.1 Amp for every new well found this week | Hold a week with 2 Wayfaring relics |
-| **The Old Keeper**<br>*He has watched this street for a hundred years. He likes you.* | ×3 Amp at wells you've visited before | Hold a week with 2 Refrain relics |
+| **The Old Keeper**<br>*He has watched this street for a hundred years. He likes you.* | ×3 Amp at wells you offered at on an earlier Night | Hold a week with 2 Refrain relics |
 | **The Midnight Engine**<br>*Tick. Tick. Tick. Tick.* | Every offering counts twice | Hold a week with 2 Tempo relics |
 <!-- END relics -->
 
@@ -342,9 +347,9 @@ also pick them from a menu. You start each run with GLAMOUR.
 | **VEIL** | Static: no Heat and +3 Thirst tonight | *Nobody saw anything.* | Offer Static 10 times |
 | **CHALK** | Carve a random glyph into this well | *Your mark, their wall.* | Start |
 | **KINDLE** | Give a random relic a shine | *A little fire in the glass.* | Own a relic with a shine |
-| **AUGUR** | Clear tonight's Omen | *Read the signs again. Squint.* | See 10 Omens |
+| **AUGUR** | Clear tonight's Omen and undo what it took. Not a Wardens walk. | *Read the signs again. Squint.* | See 10 Omens |
 | **RECALL** | Get back the last spell you used | *Again, with feeling.* | Cast 20 spells |
-| **BARGAIN** | The next stall is half price | *Closing-down sale. Everything must go.* | Leave a stall with 0 coin |
+| **BARGAIN** | Relics and wares at the next stall are half price | *Closing-down sale. Everything must go.* | Leave a stall with 0 coin |
 | **SUMMON** | A legendary relic, into a free slot | *Something answers. Be polite.* | Hold 3 weeks |
 <!-- END spells -->
 
@@ -387,7 +392,7 @@ One mod is on offer in every shop. The second tier only shows up once you own th
 | **True north** | Dowsing finds a well on a third of your visits | Lodestone |
 | **Overstock** | +1 relic at every stall | - |
 | **Night market** | +1 spell, glyph or Attunement at every stall | Overstock |
-| **Clearance** | Everything at the stall costs 1 less | - |
+| **Clearance** | Relics and wares at the stall cost 1 less | - |
 | **Liquidation** | Rerolls cost 2 less | Clearance |
 | **Fifth pocket** | +1 spell slot | - |
 | **Sixth socket** | +1 relic slot | Fifth pocket |
@@ -411,7 +416,7 @@ They also save real-world walking: a Night that ends early is a shorter walk.
 | **Windfall** | +10 coin |
 | **Doubled interest** | Interest pays double tonight |
 | **Free rerolls** | Two free rerolls at the next stall |
-| **Shine** | Your next relic comes with a shine |
+| **Shine** | A relic at the next stall comes with a shine |
 | **Tuning** | +1 Attunement on your focus energy |
 | **Scroll** | A free spell |
 | **Chalk mark** | A free glyph to carve into any well |

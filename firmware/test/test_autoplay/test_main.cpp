@@ -224,7 +224,12 @@ static Outcome playRun(uint32_t seed, int calling, int pact) {
       playVisit();
     }
     if (!r.n.met) { o.failNight = r.night + 1; break; }
-    const NightEnd e = endNight(r, car, 70);
+    GiftSwap sw{};
+    DawnNotes dn{};
+    const NightEnd e = endNight(r, car, 70, nullptr, &sw, &dn);
+    for (int k = 0; k < 3; k++) if (giftWaiting(sw) == k) takeGift(r, sw, k, weakestRelic(r, mem));   // a free relic: sell the weakest for it
+    if (dn.gift) takeNightRelic(r, dn, weakestRelic(r, mem));
+    check(r.nSpells <= spellSlots(r), "too many spells");
     check(r.coin >= 0, "negative coin");
     check(slotsUsed(r) <= relicSlots(r), "too many relics");
     check(r.nRelics <= Run::MaxRelics, "relic array overflow");

@@ -14,17 +14,32 @@ namespace Persist {
 inline Preferences prefs;
 inline bool muted = false;
 inline uint32_t lastWalk = 0;
+inline bool keyNew = false;   // no key was stored: this boot made one
+inline uint32_t titheAt = 0;   // where the Tithe's own flash area was when it last mounted, 0 never (SaveStore::begin)
+inline bool keyKept = true;    // the key made this boot was stored (a full settings area can refuse it)
 
-// Call after the radio is on: the hardware random generator is only truly
-// random while the radio runs.
-inline void begin() {
+// Read what's kept. False when there's no key yet: then makeKey() once the
+// radio is on.
+inline bool begin() {
   prefs.begin("deck", false);
-  if (prefs.getBytes("key", Keys::device, 16) != 16) {
-    esp_fill_random(Keys::device, 16);
-    prefs.putBytes("key", Keys::device, 16);
-  }
   muted = prefs.getBool("mute", false);
   lastWalk = prefs.getUInt("walk", 0);
+  titheAt = prefs.getUInt("lfsat", 0);
+  return prefs.getBytes("key", Keys::device, 16) == 16;
+}
+
+// A new key. Call after the radio is on: the hardware random generator is only
+// truly random while the radio runs.
+inline void makeKey() {
+  esp_fill_random(Keys::device, 16);
+  keyKept = prefs.putBytes("key", Keys::device, 16) == 16;
+  keyNew = true;
+}
+
+inline void noteTitheMounted(uint32_t at) {
+  if (titheAt == at) return;
+  titheAt = at;
+  prefs.putUInt("lfsat", at);
 }
 
 inline void setMuted(bool m) {

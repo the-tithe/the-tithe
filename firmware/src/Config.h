@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 namespace Config {
-constexpr const char* Version = "0.6.0";
+constexpr const char* Version = "0.6.1";
 
 constexpr int ScreenW = 240;
 constexpr int ScreenH = 135;

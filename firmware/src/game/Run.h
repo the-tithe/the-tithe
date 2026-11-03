@@ -168,6 +168,14 @@ using Run = RunT<RelicIdCap>;
 
 // ---- Small helpers used everywhere -----------------------------------------
 
+// Relics that grow over the week (their value lives in Run::state).
+inline bool growingRelic(int id) {
+  using namespace Cat;
+  return id == R_tally_stick || id == R_ritual_candle || id == R_patience || id == R_pilgrims_staff ||
+         id == R_black_ledger || id == R_picket_fence || id == R_piggy_bank || id == R_locked_diary ||
+         id == R_pedometer || id == R_mixtape || id == R_rain_gauge || id == R_prism_jar || id == R_seed_vault;
+}
+
 inline bool owns(const Run& r, int relic) {
   for (int i = 0; i < r.nRelics; i++) if (r.relics[i].id == relic) return true;
   return false;
@@ -183,6 +191,7 @@ inline bool isCalling(const Run& r, int c) { return r.calling == c; }
 // Each rule turns on at its rung (Cat::Pacts' index) and stays on above it; the
 // rung table is the ladder. test/test_depth moves rules between rungs to
 // measure other ladders. The Deck never writes `rules`.
+// Iron: the last three Nights ask more (rules.steep). Ash: the same energy twice in a row pays less (rules.tire).
 enum PactRule : uint8_t { PR_lead, PR_iron, PR_ash, PR_bone, PR_silver, PR_obsidian, PR_gold, PactRuleCount };
 constexpr uint8_t RungOff = 99;
 struct Rules {
@@ -191,6 +200,13 @@ struct Rules {
   uint8_t portentChoiceBelow = 3;     // below this rung the dawn offers two Portents and you keep one (0: never)
   uint8_t quietRung = 4;              // from this rung the Deck goes quiet: no offerings-to-go on the Tithe bar,
                                       // no star at the stall, and the Omen waits for its Night (Estimates.h)
+  double steep[3] = {1.25, 1.5, 1.75};   // Iron: Nights 5, 6 and 7 (and Overnight) ask this many times more
+  double tire = 0.7;                  // Ash: the same energy as the offering before, tonight, pays this x Thirst
+  bool multSlot = false;              // from the second stall, one relic on the shelf is always a multiplier (before Nov 2026)
+  double multKeep = 0.35;             // a multiplier rolled for a plain slot stays with this chance (else something that adds)
+  double growth = 1.0;                // growing relics grow this many times their listed step (for measuring)
+  double growerPull = 0.25;           // chance a plain shelf roll is swapped for a growing relic of its rarity, if one exists
+  double overnightAccel = 0.5;        // each Overnight Night's growth is this much more than the last (x2, x2+a, x2+2a...)
 };
 inline Rules rules;
 inline bool pactRung(const Run& r, uint8_t rung) { return r.pact >= rung; }
@@ -201,6 +217,27 @@ inline bool deckQuiet(const Run& r) { return pactRung(r, rules.quietRung); }
 // `pending` says Portent k is one of two, alt[k] is the other (Cat::Portent + 1),
 // and `interest` is the Night's interest, for a Doubled interest kept late.
 struct PortentChoice { uint8_t pending; uint8_t alt[3]; uint8_t interest; };
+
+// A Gift or Conjunction relic that came with no slot free, per Portent k:
+// id[k] is the relic + 1 (0 none), waiting at the dawn for you to sell one of
+// yours for it or leave it. A Scroll's spell with no slot free waits the same
+// way, as SwapSpell | the spell + 1, for you to forget one of yours for it.
+struct GiftSwap { uint8_t id[3]; int8_t ed[3]; int8_t withered[3]; };
+constexpr uint8_t SwapSpell = 0x80;   // relic ids stay under RelicIdCap (128), so this bit is free
+
+// What the dawn needs to say that NightEnd has no room for (it's saved as-is),
+// kept in the walks' block (Moments) with the dawn's other leftovers.
+struct DawnNotes {
+  uint8_t gift;        // Empty pockets: the Night's relic + 1, waiting for a free slot (0 none).
+                       // Trials run on Chalk, so it never withers.
+  int8_t giftEd;       // its shine, -1 none
+  uint8_t crumbled;    // a withered relic that crumbled at this dawn + 1 (the last one, when more did)
+  uint8_t nCrumbled;   // how many crumbled
+  uint8_t capped;      // Shoestring: coin the 15 cap took at this dawn
+  uint8_t turned;      // the Night that follows: the Omen + 1 (low 4 bits) and the Eclipse + 1
+                       // (high 4 bits) that Charm ward or Eclipse ward turned away
+};
+static_assert(sizeof(DawnNotes) == 6, "DawnNotes takes the walks' block's six spare dawn bytes");
 
 inline int relicSlots(const Run& r) {
   if (isCalling(r, Cat::Calling_pilgrim)) return 4 - pactOn(r, PR_gold);

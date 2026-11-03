@@ -1,5 +1,6 @@
 #pragma once
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include <esp_wifi.h>
 #include "Config.h"
 #include "Well.h"
@@ -21,6 +22,13 @@ inline uint32_t nextAt = 0;
 inline uint32_t failures = 0;
 inline Net nets[MaxNets];
 inline int count = 0;      // networks in the last finished scan
+inline uint32_t waited = 0;   // scans put off for want of memory (see poll)
+
+// When a scan ends, the WiFi library borrows one block for every network heard,
+// about 80 bytes each (not just the MaxNets kept), and a failed borrow there
+// restarts the Deck. 300 networks need 24 KB, so a scan waits until a block
+// that big is free.
+constexpr uint32_t ScanNeedsBytes = 24 * 1024;
 
 // Dowsing listens to one channel only, so readings come about 7 times a
 // second instead of once every 2.4 s. Those quick scans see only part of
@@ -60,6 +68,7 @@ inline bool poll(uint32_t nowMs) {
   if (!ok) return false;
   if (!running) {
     if ((int32_t)(nowMs - nextAt) < 0) return false;
+    if (heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < ScanNeedsBytes) { waited++; nextAt = nowMs + 1000; return false; }
     runningFocused = focusChannel != 0;
     const int16_t r = runningFocused
                           ? WiFi.scanNetworks(true, true, true, FocusMsPerChannel, focusChannel)

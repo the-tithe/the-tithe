@@ -31,7 +31,7 @@ inline Trend trendOf(const WellRec& w, uint32_t scanNo) {
 inline bool update(const Press& p) { return p.back; }
 inline bool wantsDowse(const Press& p) { return p.ch == 'd'; }
 
-inline void graph(Canvas& g, int x, int y, int w, int h, const WellRec& wr, uint32_t scanNo) {
+inline void graph(Canvas& g, int x, int y, int w, int h, const WellRec& wr, uint32_t scanNo, Energy shown) {
   constexpr int Lo = -95, Hi = -35;
   for (int db = -85; db <= -45; db += 10) {   // faint guide lines
     const int gy = y + h - (db - Lo) * h / (Hi - Lo);
@@ -40,7 +40,7 @@ inline void graph(Canvas& g, int x, int y, int w, int h, const WellRec& wr, uint
   const int n = WellRec::Hist;
   const int bw = w / n;
   x += w - n * bw;   // the newest scan sits at the right edge
-  const uint16_t c = UI::energyColor(wr.energy);
+  const uint16_t c = UI::energyColor(shown);
   for (int k = 0; k < n; k++) {   // oldest on the left
     const uint32_t s = scanNo - (uint32_t)(n - 1 - k);
     const int bx = x + k * bw;
@@ -76,10 +76,11 @@ inline void draw(Canvas& g, const Sightings& sky, uint32_t id, const Status& st,
   }
 
   int x = 4;
-  UI::energyGlyph(g, x, 24, w->energy, UI::energyColor(w->energy));
+  const Energy te = st.tonightOf(w->energy);   // what it gives tonight (Glitch, a Static storm)
+  UI::energyGlyph(g, x, 24, te, UI::energyColor(te));
   x += 11;
-  UI::text(g, x, 24, energyName(w->energy), UI::energyColor(w->energy));
-  x += UI::textW(energyName(w->energy)) + 2 * UI::CharW;
+  UI::text(g, x, 24, energyName(te), UI::energyColor(te));
+  x += UI::textW(energyName(te)) + 2 * UI::CharW;
   if (st.wellFocus >= 0) {   // it also gives your focus tonight
     const Energy f = (Energy)st.wellFocus;
     UI::energyGlyph(g, x, 24, f, UI::energyColor(f));
@@ -87,7 +88,8 @@ inline void draw(Canvas& g, const Sightings& sky, uint32_t id, const Status& st,
     UI::text(g, x, 24, energyName(f), UI::energyColor(f));
     x += UI::textW(energyName(f)) + 2 * UI::CharW;
   }
-  UI::text(g, x, 24, factionName(w->faction), UI::factionColor(w->faction));
+  const Faction f = st.faction >= 0 ? (Faction)st.faction : w->faction;   // a Static storm makes every well Hedge
+  UI::text(g, x, 24, factionName(f), UI::factionColor(f));
   if (st.wellFavor > 0) {   // a favor you could take here, instead of the channel
     snprintf(b, sizeof(b), "FAVOR +%dc", st.wellFavor);
     UI::textRight(g, UI::W - 4, 24, b, UI::factionColor((Faction)st.wellFavorFaction));
@@ -104,15 +106,15 @@ inline void draw(Canvas& g, const Sightings& sky, uint32_t id, const Status& st,
   }
 
   if (w->namesake) {   // decided when it came into reach: a well you've worked has its name
-    graph(g, 4, 37, UI::W - 8, 20, *w, sky.scans());
+    graph(g, 4, 37, UI::W - 8, 20, *w, sky.scans(), te);
     UI::text(g, 4, 63, "SAME NAME AS A WELL YOU'VE WORKED.", UI::Text);
     UI::text(g, 4, 74, "ELSEWHERE.", UI::Text);
   } else {
-    graph(g, 4, 37, UI::W - 8, 44, *w, sky.scans());
+    graph(g, 4, 37, UI::W - 8, 44, *w, sky.scans(), te);
   }
 
   const bool gone = !sky.inRange(*w);
-  const UI::Reach r = UI::reachOf(w->sig);
+  const UI::Reach r = st.wellHeld ? UI::Reach::Near : UI::reachOf(w->sig);
   UI::text(g, 4, 88, gone ? "LOST" : UI::reachName(r), gone ? UI::Dim : UI::reachColor(r), 2);
   if (!gone) {
     const Trend tr = trendOf(*w, sky.scans());

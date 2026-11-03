@@ -329,6 +329,15 @@ inline StretchNow stretchNow{};
 inline bool nightOn() { return inRun() && game.phase == Game::Phase::Night; }
 inline bool streetsOpen() { return (game.career.pages >> 7) & 1; }   // the list opens with the page about wells
 
+// Room to write a street in: under four, or one crossed out to write over.
+inline bool streetRoom() {
+  const Game::Moments& m = game.moments;
+  if (m.nStreets < Game::Moments::MaxStreets) return true;
+  for (int i = 0; i < m.nStreets; i++) if (m.streets[i].crossed) return true;
+  return false;
+}
+inline bool streetsFullSaid = false;   // STREETS FULL is said once a session
+
 // Keep a stretch just walked: in an empty place, or over the one walked on
 // the fewest Nights and, of those, the one first walked longest ago (its first
 // Night's code is its age), so a street you keep coming back to is never the
@@ -387,7 +396,12 @@ inline bool noticeStretches(const Ctx& c, const WellRec* const* list, int n, Tun
     }
     if (here < StretchAgain) continue;
     if (st.walk(tonight)) momentsDirty = true;
-    if (st.nNights < 3 || st.asked || !loud || !streetsOpen() || m.nStreets >= Game::Moments::MaxStreets || ask) continue;
+    if (st.nNights < 3 || st.asked || !loud || !streetsOpen() || ask) continue;
+    if (!streetRoom()) {   // it stays unasked, for when one is crossed out
+      if (!streetsFullSaid) holdNote("STREETS FULL: CROSS ONE OUT FOR ROOM", UI::Dim);
+      streetsFullSaid = true;
+      continue;
+    }
     st.asked = 1;
     m.keepName = Game::packName(loud->seed, (int)loud->faction);
     holdNote("A STREET YOU KEEP?", UI::Accent);

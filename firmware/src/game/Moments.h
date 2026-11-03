@@ -264,7 +264,15 @@ struct Moments {
   uint16_t keepName;   // a stretch you keep, waiting to be written in: its loudest well's true name (packName)
   uint16_t taught;     // a bit per first-time note already shown (App::Taught), so each says its line once
   PortentChoice portent;   // the dawn's Portents still to choose between (was spare bytes, always zero before)
-  uint8_t spare[23];   // zero: room for a later field without moving the rest
+  GiftSwap swap;           // a free relic with no room for it, waiting at the dawn (was spare bytes too)
+  // Zero: room for later fields without moving the rest. Split in two so separate
+  // pieces of work can each claim their own bytes.
+  DawnNotes dawn;            // for the dawn: what it has to say (these were spare bytes, always zero before)
+  // These three were spare bytes, always zero before.
+  uint16_t adrift;           // tonight's drifting glyph, still waiting: 0x8000 | shape << 12 | hand (0 none)
+  uint16_t reveal;           // the week's reveal not yet seen: 0x8000 | the Grimoire's pages before it (0 none)
+  uint16_t deckTag;          // Keys::deckTag() of the Deck that saved it (0: an older save)
+  uint8_t spareOutside[2];   // for saves, walks and finds
 
   // A well that travelled with you on an earlier walk.
   bool travelled(uint32_t id) const {

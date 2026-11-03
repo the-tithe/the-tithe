@@ -72,6 +72,45 @@ static void test_a_refused_save_leaves_the_game_alone() {
   TEST_ASSERT_EQUAL_MEMORY(&before, &b, sizeof(b));
 }
 
+// The Deck boots by reading each copy straight into the game (decodeInto), a
+// piece at a time from the file, with nothing borrowed. It loads what decode() does.
+static size_t fileLen = 0;
+static size_t fileRead(size_t at, uint8_t* to, size_t len) {
+  if (at >= fileLen) return 0;
+  const size_t k = len < fileLen - at ? len : fileLen - at;
+  memcpy(to, buf + at, k);
+  return k;
+}
+static void test_reading_straight_in_loads_the_save() {
+  SaveFormat::encode(a, buf);
+  fileLen = SaveFormat::Bytes;
+  memset(&b, 0x55, sizeof(b));
+  TEST_ASSERT_EQUAL((int)SaveFormat::Load::Ok, (int)SaveFormat::decodeInto(fileLen, fileRead, b));
+  TEST_ASSERT_EQUAL_MEMORY(&a, &b, sizeof(a));
+}
+static void test_reading_straight_in_refuses_short_and_damaged_files() {
+  SaveFormat::encode(a, buf);
+  fileLen = SaveFormat::Bytes - 1;   // cut off
+  TEST_ASSERT_EQUAL((int)SaveFormat::Load::WrongSize, (int)SaveFormat::decodeInto(fileLen, fileRead, b));
+  fileLen = SaveFormat::Bytes;
+  buf[sizeof(SaveFormat::Header) + 500] ^= 0x10;
+  TEST_ASSERT_EQUAL((int)SaveFormat::Load::BadChecksum, (int)SaveFormat::decodeInto(fileLen, fileRead, b));
+  fileLen = 0;
+  TEST_ASSERT_EQUAL((int)SaveFormat::Load::Empty, (int)SaveFormat::decodeInto(fileLen, fileRead, b));
+}
+// A real save from a Deck, when TITHE_SAVE names one: it reads straight in.
+static void test_a_real_save_reads_straight_in() {
+  const char* path = getenv("TITHE_SAVE");
+  if (!path) TEST_IGNORE_MESSAGE("set TITHE_SAVE to a deck.sav to check it");
+  FILE* f = fopen(path, "rb");
+  TEST_ASSERT_NOT_NULL(f);
+  fileLen = fread(buf, 1, sizeof(buf), f);
+  fclose(f);
+  TEST_ASSERT_EQUAL((int)SaveFormat::Load::Ok, (int)SaveFormat::decodeInto(fileLen, fileRead, b));
+  printf("real save: %u bytes, %u weeks, play %lu s, %d wells in the atlas\n", (unsigned)fileLen, (unsigned)b.career.runs,
+         (unsigned long)(b.playMs / 1000), b.atlas.count);
+}
+
 static void test_saves_from_another_catalog_are_refused() {
   SaveFormat::encode(a, buf);
   SaveFormat::Header h;
@@ -452,6 +491,10 @@ static void test_a_salt_era_save_still_loads() {
   h.catalog = SaveFormat::CatalogSalt;
   memcpy(buf, &h, sizeof(h));
   TEST_ASSERT_EQUAL((int)SaveFormat::Load::Ok, (int)SaveFormat::decode(buf, SaveFormat::Bytes, b));
+  // The 96-relic catalog (0.6.x), before the five growing relics: same layout, so it loads too.
+  h.catalog = SaveFormat::Catalog96;
+  memcpy(buf, &h, sizeof(h));
+  TEST_ASSERT_EQUAL((int)SaveFormat::Load::Ok, (int)SaveFormat::decode(buf, SaveFormat::Bytes, b));
   h.catalog = 0x12345678u;
   memcpy(buf, &h, sizeof(h));
   TEST_ASSERT_EQUAL((int)SaveFormat::Load::OtherCatalog, (int)SaveFormat::decode(buf, SaveFormat::Bytes, b));
@@ -462,6 +505,70 @@ static void test_the_walks_block_kept_its_layout() {
   TEST_ASSERT_EQUAL(4662, (int)offsetof(Moments, ribbons));
   TEST_ASSERT_EQUAL(5154, (int)offsetof(Moments, streets));
   TEST_ASSERT_EQUAL(5246, (int)offsetof(Moments, stretches));
+  TEST_ASSERT_EQUAL(5654, (int)offsetof(Moments, adrift));   // the old spare bytes, from the end
+  TEST_ASSERT_EQUAL(5660, (int)offsetof(Moments, spareOutside));
+}
+
+// Which copy a boot loads: the newer whole one. A broken one is set aside; a newer
+// Tithe's save, or no memory to read one, stops the boot with both kept.
+static void test_the_boot_loads_the_newer_copy() {
+  using SaveFormat::Boot;
+  using SaveFormat::Copy;
+  using L = SaveFormat::Load;
+  const Copy none{L::Empty, 0, 0}, older{L::Ok, 100, 7}, newer{L::Ok, 200, 7}, untagged{L::Ok, 300, 0};
+  const Copy damaged{L::BadChecksum, 0, 0}, later{L::NewerVersion, 0, 0}, noMem{L::NoMemory, 0, 0};
+  const Copy otherDeck{L::Ok, 900, 9};
+  auto boot = [](const Copy& f, const Copy& c) { return (int)SaveFormat::chooseBoot(f, c, 7); };
+  TEST_ASSERT_EQUAL((int)Boot::Fresh, boot(none, none));
+  TEST_ASSERT_EQUAL((int)Boot::Flash, boot(newer, older));
+  TEST_ASSERT_EQUAL((int)Boot::Flash, boot(newer, newer));     // a tie stays with flash
+  TEST_ASSERT_EQUAL((int)Boot::CardNewer, boot(older, newer));  // flash saves were failing
+  TEST_ASSERT_EQUAL((int)Boot::CardNewer, boot(older, untagged));
+  TEST_ASSERT_EQUAL((int)Boot::Flash, boot(older, otherDeck));  // a card from another Deck never wins
+  TEST_ASSERT_EQUAL((int)Boot::Flash, boot(newer, damaged));
+  TEST_ASSERT_EQUAL((int)Boot::Card, boot(none, older));
+  TEST_ASSERT_EQUAL((int)Boot::CardDamaged, boot(damaged, older));
+  TEST_ASSERT_EQUAL((int)Boot::SetAside, boot(damaged, none));
+  TEST_ASSERT_EQUAL((int)Boot::SetAside, boot(none, damaged));
+  TEST_ASSERT_EQUAL((int)Boot::SetAside, boot(damaged, damaged));
+  TEST_ASSERT_EQUAL((int)Boot::Newer, boot(later, older));
+  TEST_ASSERT_EQUAL((int)Boot::Newer, boot(newer, later));
+  TEST_ASSERT_EQUAL((int)Boot::Newer, boot(later, damaged));
+  TEST_ASSERT_EQUAL((int)Boot::NoMemory, boot(noMem, older));
+  TEST_ASSERT_EQUAL((int)Boot::NoMemory, boot(damaged, noMem));
+  // Only a damaged save, or one from other firmware, is ever set aside.
+  TEST_ASSERT_TRUE(SaveFormat::broken(L::BadChecksum));
+  TEST_ASSERT_TRUE(SaveFormat::broken(L::OtherCatalog));
+  TEST_ASSERT_FALSE(SaveFormat::broken(L::NewerVersion));
+  TEST_ASSERT_FALSE(SaveFormat::broken(L::NoMemory));
+  TEST_ASSERT_FALSE(SaveFormat::broken(L::Empty));
+  TEST_ASSERT_FALSE(SaveFormat::broken(L::Ok));
+}
+
+// Telling the two copies apart reads a piece at a time: the checksum, the play clock and the Deck's tag.
+static size_t readBuf(size_t at, uint8_t* out, size_t len) {
+  if (at >= SaveFormat::Bytes) return 0;
+  const size_t n = len < SaveFormat::Bytes - at ? len : SaveFormat::Bytes - at;
+  memcpy(out, buf + at, n);
+  return n;
+}
+static void test_a_peek_reads_the_play_clock() {
+  a.moments.deckTag = 0xBEEF;
+  SaveFormat::encode(a, buf);
+  SaveFormat::Copy c = SaveFormat::peek(SaveFormat::Bytes, readBuf);
+  TEST_ASSERT_EQUAL((int)SaveFormat::Load::Ok, (int)c.load);
+  TEST_ASSERT_EQUAL_UINT32(123456, c.playMs);
+  TEST_ASSERT_EQUAL_HEX16(0xBEEF, c.tag);
+  TEST_ASSERT_EQUAL((int)SaveFormat::Load::Empty, (int)SaveFormat::peek(0, readBuf).load);
+  TEST_ASSERT_EQUAL((int)SaveFormat::Load::WrongSize, (int)SaveFormat::peek(SaveFormat::Bytes - 1, readBuf).load);
+  buf[sizeof(SaveFormat::Header) + 1000] ^= 0x10;
+  TEST_ASSERT_EQUAL((int)SaveFormat::Load::BadChecksum, (int)SaveFormat::peek(SaveFormat::Bytes, readBuf).load);
+  SaveFormat::encode(a, buf);
+  SaveFormat::Header h;
+  memcpy(&h, buf, sizeof(h));
+  h.version = SaveFormat::Version + 1;
+  memcpy(buf, &h, sizeof(h));
+  TEST_ASSERT_EQUAL((int)SaveFormat::Load::NewerVersion, (int)SaveFormat::peek(SaveFormat::Bytes, readBuf).load);
 }
 
 static void test_the_save_fits_the_deck() {
@@ -475,6 +582,9 @@ int main() {
   RUN_TEST(test_damage_is_caught);
   RUN_TEST(test_short_wrong_and_newer_saves_are_refused);
   RUN_TEST(test_a_refused_save_leaves_the_game_alone);
+  RUN_TEST(test_reading_straight_in_loads_the_save);
+  RUN_TEST(test_reading_straight_in_refuses_short_and_damaged_files);
+  RUN_TEST(test_a_real_save_reads_straight_in);
   RUN_TEST(test_saves_from_another_catalog_are_refused);
   RUN_TEST(test_impossible_values_are_refused);
   RUN_TEST(test_a_version_1_save_upgrades);
@@ -495,6 +605,8 @@ int main() {
   RUN_TEST(test_a_pending_portent_choice_is_range_checked);
   RUN_TEST(test_a_salt_era_save_still_loads);
   RUN_TEST(test_the_walks_block_kept_its_layout);
+  RUN_TEST(test_the_boot_loads_the_newer_copy);
+  RUN_TEST(test_a_peek_reads_the_play_clock);
   RUN_TEST(test_the_save_fits_the_deck);
   return UNITY_END();
 }

@@ -53,6 +53,7 @@ inline Mode back = Mode::Scanner;   // where ESC returns to from a well or menu
 inline Mode listMode = Mode::Scanner;
 inline float modeT = 0;
 inline uint32_t wellId = 0;         // the well open in Well / Visit / Dowse
+inline uint32_t heldId = 0;         // the open well, held in reach while it fades (holdReach)
 inline int sel = 0;                 // the cursor on list screens
 inline int top = 0;                 // first row shown on long lists
 inline int tab = 0;                 // the tab on tabbed screens
@@ -62,6 +63,18 @@ inline char toastText[40] = "";
 inline float toastT = 0;
 inline uint16_t toastColor = 0;
 
+// Screens with a ceremony of their own: nothing from the walk plays or
+// shows over them.
+inline bool ceremonyScreen() {
+  switch (mode) {
+    case Mode::Boot: case Mode::Dowse: case Mode::Drawing: case Mode::Show: case Mode::NightStart: case Mode::NightEnd:
+    case Mode::OutOfVisits: case Mode::Shop: case Mode::ShopDrop: case Mode::ShopAttune: case Mode::ShopForget:
+    case Mode::Won: case Mode::Lost: case Mode::Reveal: case Mode::Bind: case Mode::Premise:
+      return true;
+    default: return false;
+  }
+}
+
 inline void toast(const char* s, uint16_t c = 0, float secs = 1.6f) {
   strncpy(toastText, s, sizeof(toastText) - 1);
   toastText[sizeof(toastText) - 1] = 0;
@@ -69,28 +82,38 @@ inline void toast(const char* s, uint16_t c = 0, float secs = 1.6f) {
   toastColor = c ? c : UI::Text;
 }
 
-// Toasts that wait for the one on screen to end, two deep (a third drops the oldest waiting).
+// Toasts that wait for the one on screen to end, four deep (a fifth drops the oldest waiting).
 struct ToastNext { char text[40]; float secs; uint16_t color; };
-inline ToastNext toastNext[2] = {};
+constexpr int ToastQueue = 4;
+inline ToastNext toastNext[ToastQueue] = {};
 inline int nToastNext = 0;
 
 inline void toastAfter(const char* s, uint16_t c = 0, float secs = 1.6f) {
   if (toastT <= 0 && nToastNext == 0) { toast(s, c, secs); return; }
-  if (nToastNext == 2) { toastNext[0] = toastNext[1]; nToastNext = 1; }
+  if (nToastNext == ToastQueue) {
+    memmove(&toastNext[0], &toastNext[1], sizeof(toastNext[0]) * (ToastQueue - 1));
+    nToastNext--;
+  }
   ToastNext& n = toastNext[nToastNext++];
   strncpy(n.text, s, sizeof(n.text) - 1);
   n.text[sizeof(n.text) - 1] = 0;
   n.secs = secs;
   n.color = c;
 }
-inline void tickToast(float dt) {
+// A toast waits out the boot animation, which hides it, and a dimmed screen,
+// where it couldn't be read: `awake` false holds it where it is.
+inline void tickToast(float dt, bool awake = true) {
+  if (mode == Mode::Boot || !awake) return;
   if (toastT > 0) toastT -= dt;
   if (toastT <= 0 && nToastNext > 0) {
     toast(toastNext[0].text, toastNext[0].color, toastNext[0].secs);
-    toastNext[0] = toastNext[1];
+    memmove(&toastNext[0], &toastNext[1], sizeof(toastNext[0]) * (ToastQueue - 1));
     nToastNext--;
   }
 }
+
+// The toast on screen says `s`.
+inline bool toastSays(const char* s) { return toastT > 0 && strcmp(toastText, s) == 0; }
 
 inline void beep(int hz, int ms) { if (hooks.tone) hooks.tone(hz, ms); }
 inline void save(bool now = false) { if (hooks.save) hooks.save(now); }
@@ -125,7 +148,18 @@ inline Game::WellView viewOf(const WellRec& w, const Sightings& sky, uint32_t no
   return v;
 }
 
-// A remembered well for ECHO: what the atlas knows, heard from afar.
+// Walking past, a well is in reach for only a few seconds. One you opened
+// while it was in reach stays in reach until it fades past HoldDbm, so a
+// trade you started doesn't fail halfway through.
+inline void holdReach(Game::WellView& v, const WellRec& w, const Sightings& sky) {
+  if (!sky.inRange(w) || w.sig < Game::HoldDbm) { if (heldId == w.id) heldId = 0; return; }
+  if (w.sig >= Game::ReachDbm) heldId = w.id;
+  else if (heldId == w.id) v.sig = Game::ReachDbm;
+}
+
+// A remembered well for ECHO: what the atlas knows, heard from afar. The
+// atlas keeps no channel (0: not known) and there's no signal, so relics that
+// read a well's channel, mesh or signal don't fire through ECHO.
 inline Game::WellView viewOf(const Game::AtlasEntry& a) {
   Game::WellView v{};
   v.id = a.id;
@@ -176,6 +210,7 @@ inline Game::Run& scratch() { return Game::scratchRun(); }
 inline double estimateSale(const Game::WellView& w, const Game::Here& h, int e) {
   Game::Sale s;   // scoring only reads the run, so no copy is needed
   Game::saleContext(s, game.run, game.atlas, w, h, e);
+  if (game.run.challenge == 5 && s.revisit) return 0;   // The long way: old wells earn nothing
   return Game::score(s, game.run).resonance * (game.run.n.glamour ? 2 : 1);
 }
 
@@ -188,12 +223,12 @@ inline double bestAt(const Game::WellView& w, const Game::Here& h, int* sellE = 
   int bestE = -1;
   bool bestF = false;
   const bool canD = canDraw(r, game.atlas, w) == Why::Ok;
-  for (int f = 0; f < (canD && givesFocus(r, w) ? 2 : 1); f++) {
+  for (int f = 0; f < (canD && givesFocus(r, w) && forcedDraw(r) < 0 ? 2 : 1); f++) {
     uint8_t keep[EnergyN];
     memcpy(keep, r.hold, sizeof(keep));
     if (canD) {
-      const int e = f ? r.focus : wellEnergy(r, w);
-      const int units = r.hold[e] + (int)lround(drawUnits(r, w));
+      const int e = forcedDraw(r) >= 0 ? forcedDraw(r) : f ? r.focus : wellEnergy(r, w);
+      const int units = r.hold[e] + drawFits(r, w);   // only what fits in the hold
       r.hold[e] = (uint8_t)(units > 255 ? 255 : units);
     }
     for (int e = 0; e < EnergyN; e++) {
@@ -229,6 +264,20 @@ inline uint32_t starWell(const Ctx& c) {
 }
 
 // ---- Words -----------------------------------------------------------------------
+
+// A growing relic's value so far, as its row shows it: +N for one that adds, xN for one that multiplies.
+inline const char* growthText(int id, double v, char* b, int cap) {
+  using namespace Cat;
+  const bool times = id == R_black_ledger || id == R_pilgrims_staff || id == R_locked_diary || id == R_ritual_candle ||
+                     id == R_long_receipt || id == R_prism_jar || id == R_seed_vault;
+  const double shown = times ? 1 + v : v;
+  char n[16];
+  if (shown >= 100) UI::num(shown, n, sizeof(n));
+  else if (shown >= 10 || fabs(shown - lround(shown)) < 0.05) snprintf(n, sizeof(n), "%ld", lround(shown));
+  else snprintf(n, sizeof(n), "%.1f", shown);
+  snprintf(b, cap, "%s%s", times ? "x" : "+", n);
+  return b;
+}
 
 inline const char* energyWord(int e) {
   static const char* const k[] = {"EMBER", "TIDE", "GALE", "HUSH", "STATIC"};

@@ -9,12 +9,12 @@
 // The main view: the wells around you, strongest first.
 //
 //   FRINGE  7 WELLS                   87% (o)   ward, count, battery, listening
-//   N3 [=======-------------]   7 LEFT  23c       the Night: Tithe progress
+//   N3 [=========---]  1,240 TO GO   7 LEFT  23c   the Night: Tithe progress
 //   ===energy mix===========================
 //   ^ VESPER KILN   NEW          NEAR  ..||
 //   o CHROME SPIRE *             FAR   .|||       * the hint star
 //   ...
-//   TAB STREET  R REC W3  G GLASS  ESC MENU
+//   G GLASS  ESC MENU               (NOT SAVING, in red, when nothing keeps the game)
 
 namespace ScannerScreen {
 
@@ -24,6 +24,16 @@ constexpr int Rows = 8;
 constexpr int MaxList = Sightings::MaxWells;   // every listed well, so sorting sees them all
 
 inline uint32_t selectedId = 0;
+
+// A number for the Tithe line: exact below 10,000, then 17.5K, 240K, 3.1M.
+inline const char* shortNum(double v, char* buf, int cap) {
+  if (v < 1e4) return UI::num(v, buf, cap);
+  if (v < 1e5) snprintf(buf, cap, "%.1fK", floor(v / 100) / 10);
+  else if (v < 1e6) snprintf(buf, cap, "%.0fK", floor(v / 1000));
+  else if (v < 1e9) snprintf(buf, cap, "%.1fM", floor(v / 1e5) / 10);
+  else return UI::num(v, buf, cap);
+  return buf;
+}
 inline int selIndex = 0;
 inline int top = 0;
 
@@ -51,22 +61,7 @@ inline uint32_t update(const Press& p, const Sightings& sky) {
 
 inline void header(Canvas& g, const Sightings& sky, const Status& st, float t) {
   char b[24];
-  const WardKind w = sky.ward();
-  if (sky.scans() == 0) {
-    UI::text(g, 3, 3, "LISTENING", UI::Dim);
-  } else {
-    UI::text(g, 3, 3, wardName(w), UI::wardColor(w));
-    snprintf(b, sizeof(b), "%d %s", sky.near(), sky.near() == 1 ? "WELL" : "WELLS");
-    const int x = 3 + UI::textW(wardName(w)) + 2 * UI::CharW;
-    UI::text(g, x, 3, b, UI::Text);
-    if (st.adrift) {   // a drifting glyph waits in the glass: an outlined diamond
-      const int cx = x + UI::textW(b) + 9, cy = 6;
-      g.drawLine(cx, cy - 3, cx + 3, cy, Strays::Chalk);
-      g.drawLine(cx + 3, cy, cx, cy + 3, Strays::Chalk);
-      g.drawLine(cx, cy + 3, cx - 3, cy, Strays::Chalk);
-      g.drawLine(cx - 3, cy, cx, cy - 3, Strays::Chalk);
-    }
-  }
+  // The right end first, so the left knows where it has to stop.
   UI::listening(g, UI::W - 7, 6, t, st.listening);
   int rx = UI::W - 16;
   if (st.battery >= 0) {
@@ -80,17 +75,44 @@ inline void header(Canvas& g, const Sightings& sky, const Status& st, float t) {
     Effects::eyeIcon(g, rx - 2, 6, ec);
     snprintf(b, sizeof(b), "%.1f", st.heat);
     UI::textRight(g, rx - 9, 3, b, ec);
+    rx -= 9 + UI::textW(b) + 6;
   }
 
-  // The Night: how much of the Tithe is paid, and what's left to do it with.
-  // After the first offering, about how many more this build needs, and ticks
-  // under the bar where 6, 9 and 11 spare visits would land (a tick the fill
-  // has passed is bright). A quiet Deck keeps those to itself, and the bar
-  // takes the room.
+  const WardKind w = sky.ward();
+  if (sky.scans() == 0) {
+    UI::text(g, 3, 3, st.deaf ? "DEAF" : "LISTENING", st.deaf ? UI::Rec : UI::Dim);
+  } else {
+    UI::text(g, 3, 3, wardName(w), UI::wardColor(w));
+    int x = 3 + UI::textW(wardName(w)) + 2 * UI::CharW;
+    // The ward only moves once two scans agree, but the count is this scan's: when
+    // they disagree, the ward the count points to follows, dimmed.
+    const WardKind next = sky.wardHeard();
+    if (next != w) {
+      UI::text(g, x - UI::CharW, 3, ">", UI::Dim);
+      UI::text(g, x + UI::CharW, 3, wardName(next), UI::dimmed(UI::wardColor(next)));
+      x += 2 * UI::CharW + UI::textW(wardName(next)) + 2 * UI::CharW;
+    }
+    snprintf(b, sizeof(b), "%d %s", sky.near(), sky.near() == 1 ? "WELL" : "WELLS");
+    const int room = rx - (st.adrift ? 18 : 6);
+    if (x + UI::textW(b) > room) snprintf(b, sizeof(b), "%d", sky.near());   // tight: the number alone
+    UI::text(g, x, 3, b, UI::Text);
+    if (st.adrift) {   // a drifting glyph waits in the glass: an outlined diamond
+      const int cx = x + UI::textW(b) + 9, cy = 6;
+      g.drawLine(cx, cy - 3, cx + 3, cy, Strays::Chalk);
+      g.drawLine(cx + 3, cy, cx, cy + 3, Strays::Chalk);
+      g.drawLine(cx, cy + 3, cx - 3, cy, Strays::Chalk);
+      g.drawLine(cx - 3, cy, cx, cy - 3, Strays::Chalk);
+    }
+  }
+
+  // The Night: how much of the Tithe is paid, how much Resonance is still to
+  // go, and what's left to do it with. Ticks under the bar show where 6, 9 and
+  // 11 spare visits would land (a tick the fill has passed is bright); a quiet
+  // Deck keeps those to itself.
   if (st.inRun) {
     snprintf(b, sizeof(b), "N%d", st.night + 1);
     UI::text(g, 3, 13, b, UI::SelText);
-    const int bw = st.quiet ? 132 : 84;
+    const int bw = 56;   // room for "98.7K TO GO" and "12 LEFT  999c" beside it
     const double frac = st.tithe > 0 ? st.total / st.tithe : 0;
     UI::bar(g, 22, 13, bw, 7, frac, UI::Accent);
     for (int k = 0; k < st.notches; k++) {
@@ -98,9 +120,11 @@ inline void header(Canvas& g, const Sightings& sky, const Status& st, float t) {
       if (x > 22 + bw - 2) x = 22 + bw - 2;
       g.drawFastVLine(x, 20, 2, frac >= st.notch[k] ? UI::SelText : UI::Dim);
     }
-    if (st.more > 0) {
-      snprintf(b, sizeof(b), "~%d MORE", st.more);
-      UI::text(g, 22 + bw + 6, 13, b, st.more > st.visitsLeft ? UI::Rec : UI::Dim);
+    const double toGo = ceil(st.tithe - st.total);
+    if (toGo > 0) {
+      char n[16];
+      snprintf(b, sizeof(b), "%s TO GO", shortNum(toGo, n, sizeof(n)));
+      UI::text(g, 22 + bw + 5, 13, b, UI::Text);
     }
     snprintf(b, sizeof(b), "%d LEFT  %dc", st.visitsLeft, st.coin);
     UI::textRight(g, UI::W - 3, 13, b, st.visitsLeft <= 2 ? UI::Rec : UI::Text);
@@ -108,17 +132,20 @@ inline void header(Canvas& g, const Sightings& sky, const Status& st, float t) {
     UI::text(g, 3, 13, "NO WEEK BOUND: ESC > BIND A NEW WEEK", UI::Dim);
   }
 
-  // How the energy around you splits, as one bar.
+  // How the energy around you splits, as one bar: what the wells give tonight.
   const int y = 23, x0 = 0, width = UI::W;
-  int total = 0;
-  for (int e = 0; e < EnergyCount; e++) total += sky.energyNear((Energy)e);
+  int total = 0, near[EnergyCount] = {0};
+  for (int e = 0; e < EnergyCount; e++) {
+    near[(int)st.tonightOf((Energy)e)] += sky.energyNear((Energy)e);
+    total += sky.energyNear((Energy)e);
+  }
   if (total == 0) {
     g.drawFastHLine(x0, y, width, UI::Sep);
     return;
   }
   int x = x0, acc = 0;
   for (int e = 0; e < EnergyCount; e++) {
-    const int c = sky.energyNear((Energy)e);
+    const int c = near[e];
     if (!c) continue;
     acc += c;
     const int x1 = x0 + width * acc / total;
@@ -131,8 +158,9 @@ inline void row(Canvas& g, int y, const WellRec& w, const Sightings& sky, const 
   const bool lost = !sky.inRange(w);
   const bool gone = lost || (st.spent && st.spent(w.id));   // out of range, or nothing left to do there tonight
   if (sel) g.fillRect(0, y, UI::W, RowH - 1, UI::SelBg);
-  const uint16_t ec = gone ? UI::dimmed(UI::energyColor(w.energy)) : UI::energyColor(w.energy);
-  UI::energyGlyph(g, 4, y + 2, w.energy, ec);
+  const Energy te = st.tonightOf(w.energy);   // what it gives tonight
+  const uint16_t ec = gone ? UI::dimmed(UI::energyColor(te)) : UI::energyColor(te);
+  UI::energyGlyph(g, 4, y + 2, te, ec);
   // Hush wells only show their names to someone standing still.
   if (w.energy == Energy::Hush && st.hushReveal < 1) {
     char veil[17];
@@ -164,49 +192,31 @@ inline void row(Canvas& g, int y, const WellRec& w, const Sightings& sky, const 
   UI::signalBars(g, 221, y + 10, r, gone ? UI::Dim : rc);
 }
 
-// The R hint's word for each state of the walk log: REC, red while it records (the
-// walk's number is on the walk screen, which also spells the card's trouble out).
-inline const char* recWord(Status::Log log, uint16_t& color) {
-  color = UI::Dim;
-  switch (log) {
-    case Status::Log::On: color = UI::Rec; return "REC";
-    case Status::Log::NoCard: return "NO SD";
-    case Status::Log::Failed: color = UI::Rec; return "SD ERR";
-    default: return "REC";
-  }
-}
-// The TAB hint's word: the place, or PLACE when none is set.
-inline const char* placeWord(WalkFormat::Place place) {
-  return place == WalkFormat::Place::None ? "PLACE" : WalkFormat::placeLabel(place);
-}
-
-// The footer's four hints, 240 px wide at most: with the longest place and a card
-// error they wouldn't fit, so G GLASS gives way (ESC MENU is the only way to the menu).
-inline int footerWidth(WalkFormat::Place place, Status::Log log, bool withGlass) {
-  uint16_t c;
-  const auto hint = [](const char* key, const char* what) { return UI::textW(key) + UI::CharW + UI::textW(what); };
-  return 2 + hint("TAB", placeWord(place)) + 12 + hint("R", recWord(log, c)) + 12 +
-         (withGlass ? hint("G", "GLASS") + 12 : 0) + hint("ESC", "MENU");
-}
-
-inline void footer(Canvas& g, const Status& st) {
+// `star`: the hint star's well is below the rows shown (1), above them (-1), or
+// not off-screen (0). Off-screen, the footer says where, in place of G GLASS.
+inline void footer(Canvas& g, const Status& st, int star = 0) {
   UI::footerLine(g);
-  int x = UI::keyHint(g, 2, "TAB", placeWord(st.place), st.place == WalkFormat::Place::None ? UI::Dim : UI::Accent);
-  uint16_t rc;
-  const char* rec = recWord(st.log, rc);
-  x = UI::keyHint(g, x, "R", rec, rc);
-  if (footerWidth(st.place, st.log, true) <= UI::W) x = UI::keyHint(g, x, "G", "GLASS", UI::Text);
+  if (st.unsaved) UI::textRight(g, UI::W - 2, UI::FooterY, "NOT SAVING", UI::Rec);
+  int x = 2;
+  if (star) {
+    UI::text(g, x, UI::FooterY, "*", UI::SelText);
+    UI::text(g, x + 2 * UI::CharW, UI::FooterY, star > 0 ? "BELOW" : "ABOVE", UI::Dim);
+    x += 2 * UI::CharW + UI::textW("BELOW") + 2 * UI::CharW;
+  } else {
+    x = UI::keyHint(g, x, "G", "GLASS", UI::Text);
+  }
   UI::keyHint(g, x, "ESC", "MENU", UI::Text);
 }
 
-inline void empty(Canvas& g, const Sightings& sky, float t) {
+inline void empty(Canvas& g, const Sightings& sky, const Status& st, float t) {
   const int cx = UI::W / 2, cy = 68;
   for (int k = 0; k < 3; k++) {
     const float p = fmodf(t * 0.5f + k / 3.0f, 1.0f);
     g.drawCircle(cx, cy, 4 + (int)(p * 30), p < 0.5f ? UI::Sep : UI::Faint);
   }
   g.fillCircle(cx, cy, 2, UI::Accent);
-  UI::textCenter(g, 106, sky.scans() == 0 ? "LISTENING" : "NO WELLS IN RANGE", UI::Dim);
+  if (st.deaf) UI::textCenter(g, 106, "DEAF: THE RADIO DIDN'T START", UI::Rec);
+  else UI::textCenter(g, 106, sky.scans() == 0 ? "LISTENING" : "NO WELLS IN RANGE", UI::Dim);
 }
 
 inline void draw(Canvas& g, const Sightings& sky, const Status& st, float t) {
@@ -214,9 +224,12 @@ inline void draw(Canvas& g, const Sightings& sky, const Status& st, float t) {
   header(g, sky, st, t);
   static const WellRec* list[MaxList];
   const int n = sky.listed(list, MaxList);
+  int star = 0;
   if (n == 0) {
-    empty(g, sky, t);
+    empty(g, sky, st, t);
   } else {
+    for (int i = 0; i < n && st.starId; i++)
+      if (list[i]->id == st.starId) { star = i < top ? -1 : i >= top + Rows ? 1 : 0; break; }
     for (int r = 0; r < Rows && top + r < n; r++) {
       row(g, RowY0 + r * RowH, *list[top + r], sky, st, top + r == selIndex);
     }
@@ -226,7 +239,7 @@ inline void draw(Canvas& g, const Sightings& sky, const Status& st, float t) {
       g.drawFastVLine(UI::W - 1, by, bh, UI::Dim);
     }
   }
-  footer(g, st);
+  footer(g, st, star);
 }
 
 } // namespace ScannerScreen

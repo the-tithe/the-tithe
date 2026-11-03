@@ -10,6 +10,9 @@
 
 namespace Game {
 
+// Set when a full atlas forgets a well to make room (the app says so once).
+inline bool atlasForgot = false;
+
 struct AtlasEntry {
   uint32_t id;          // device-keyed router hash (Well.h)
   uint32_t seed;        // world-keyed hash, for its name and prices
@@ -41,6 +44,20 @@ struct Atlas {
   }
   const AtlasEntry* find(uint32_t id) const { return const_cast<Atlas*>(this)->find(id); }
 
+  // The well a full atlas forgets: the one visited least, longest ago. Never one
+  // from this week (`runNo`) while an older one is left, so this week's glyphs
+  // and "drawn tonight" marks stay.
+  AtlasEntry* forgettable(uint32_t runNo) {
+    AtlasEntry* a = nullptr;
+    for (int pass = 0; pass < 2 && !a; pass++)
+      for (int i = 0; i < count; i++) {
+        AtlasEntry& b = e[i];
+        if (pass == 0 && b.runNo == runNo) continue;
+        if (!a || b.visits < a->visits || (b.visits == a->visits && b.lastPlay < a->lastPlay)) a = &b;
+      }
+    return a;
+  }
+
   // The entry for a well, made if needed. Marks from an older run are cleared.
   AtlasEntry& touch(uint32_t id, uint32_t seed, uint32_t runNo, uint32_t playMin) {
     AtlasEntry* a = find(id);
@@ -48,11 +65,8 @@ struct Atlas {
       if (count < Max) {
         a = &e[count++];
       } else {   // full: forget the well visited least, longest ago
-        a = &e[0];
-        for (int i = 1; i < count; i++) {
-          const AtlasEntry& b = e[i];
-          if (b.visits < a->visits || (b.visits == a->visits && b.lastPlay < a->lastPlay)) a = &e[i];
-        }
+        a = forgettable(runNo);
+        atlasForgot = true;
       }
       memset(a, 0, sizeof(*a));
       a->id = id;
@@ -114,5 +128,11 @@ struct WellBook {
     w->total += (float)resonance;
   }
 };
+
+// The game's well book (the app points this at the save's), so the rules can tell
+// a well the atlas forgot to make room from one never offered at. Forgets on its
+// own, so a well both have forgotten does count as new again.
+inline const WellBook* bookNow = nullptr;
+inline bool offeredBefore(uint32_t id) { return bookNow && bookNow->find(id); }
 
 } // namespace Game

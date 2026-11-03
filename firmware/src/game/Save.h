@@ -67,6 +67,8 @@ constexpr uint32_t Catalog72 = 0x05F69FABu;   // Cat::CatalogHash of the 72-reli
 // from the catalog before by accepting its hash in decode(), as Catalog72 is here.
 // Renaming a Pact changes the hash and nothing else: the catalog with Salt at the second rung.
 constexpr uint32_t CatalogSalt = 0xC2B8F990u;
+// The 96-relic catalog, before the five growing relics of Nov 2026: same layout.
+constexpr uint32_t Catalog96 = 0x0B3467EAu;
 using Saved72 = SavedT<72>;
 constexpr size_t V1Size = offsetof(Saved72, log);
 constexpr size_t V2Size = offsetof(Saved72, seen);
@@ -116,7 +118,21 @@ inline void encode(const Saved& s, uint8_t* out) {
   memcpy(out + sizeof(h), &s, sizeof(Saved));
 }
 
-enum class Load : uint8_t { Ok, Empty, BadMagic, NewerVersion, WrongSize, BadChecksum, OtherCatalog, Invalid };
+// NoMemory: the Deck couldn't borrow the memory to read it, which says nothing
+// about the save itself.
+enum class Load : uint8_t { Ok, Empty, BadMagic, NewerVersion, WrongSize, BadChecksum, OtherCatalog, Invalid, NoMemory };
+
+// A save the Deck can't use but mustn't lose: damaged, or from different firmware.
+// A newer Tithe's save is kept as it is (the newer build will want it back), and
+// running out of memory says nothing about the save, so neither is one.
+inline bool broken(Load l) { return l != Load::Ok && l != Load::Empty && l != Load::NewerVersion && l != Load::NoMemory; }
+
+// One copy of the save, as found.
+struct Copy {
+  Load load;
+  uint32_t playMs;   // when Ok
+  uint16_t tag;      // when Ok: the Deck that saved it (Moments::deckTag, 0 not known)
+};
 
 inline const char* loadText(Load l) {
   switch (l) {
@@ -128,6 +144,7 @@ inline const char* loadText(Load l) {
     case Load::BadChecksum: return "damaged";
     case Load::OtherCatalog: return "made with a different catalog";
     case Load::Invalid: return "holds impossible values";
+    case Load::NoMemory: return "no memory to read it";
   }
   return "?";
 }
@@ -208,15 +225,12 @@ inline void upgrade(const SavedT<A>& o, SavedT<B>& n) {
   n.moments = o.moments;
 }
 
-// Read a save made by encode(). On anything but Ok, `s` is left alone.
-inline Load decode(const uint8_t* in, size_t n, Saved& s) {
-  if (n == 0) return Load::Empty;
-  if (n < sizeof(Header)) return Load::WrongSize;
-  Header h;
-  memcpy(&h, in, sizeof(h));
+// The header's say on a save `n` bytes long, before its checksum: what's wrong with
+// it, or Ok. `current`: it has today's layout (else the 72-relic one).
+inline Load checkHeader(const Header& h, size_t n, bool& current) {
   if (h.magic != Magic) return Load::BadMagic;
   if (h.version > Version) return Load::NewerVersion;
-  const bool current = h.catalog == Cat::CatalogHash || h.catalog == CatalogSalt;   // the same layout
+  current = h.catalog == Cat::CatalogHash || h.catalog == CatalogSalt || h.catalog == Catalog96;   // the same layout
   if (!current && h.catalog != Catalog72) return Load::OtherCatalog;
   // Older versions load with the newer parts empty.
   const size_t want = current ? (h.version == Version ? sizeof(Saved) : h.version == 6 ? V6Size : h.version == 5 ? V5Size : 0)
@@ -224,33 +238,131 @@ inline Load decode(const uint8_t* in, size_t n, Saved& s) {
                       : h.version == 4 ? V4Size : 0;
   if (h.headerSize != sizeof(Header) || want == 0 || h.size != want || n < sizeof(Header) + h.size)
     return Load::WrongSize;
-  if (crc32(in + sizeof(Header), h.size) != h.crc) return Load::BadChecksum;
-  // Check a copy, so a bad save leaves the game alone. Borrowed from the heap
-  // only while loading: it's too big for the stack, and too rarely needed to
-  // keep for good.
-  Saved* check = (Saved*)malloc(sizeof(Saved));
-  if (!check) return Load::WrongSize;
+  return Load::Ok;
+}
+
+// Where the play clock and the Deck's tag sit in a save's block, to tell which of
+// two copies is newer without reading either in full. Only today's version has
+// the tag (0: none).
+inline size_t playMsAt(bool current) { return current ? offsetof(Saved, playMs) : offsetof(Saved72, playMs); }
+inline size_t deckTagAt(bool current, uint16_t version) {
+  return current && version == Version ? offsetof(Saved, moments) + offsetof(Moments, deckTag) : 0;
+}
+
+// What a save `n` bytes long is, without holding it all in memory: its header,
+// its checksum (read a piece at a time) and its play clock. `read(at, buf, len)`
+// reads `len` bytes from offset `at` and returns how many it got. A save that
+// peeks Ok can still fail decode()'s range checks.
+template <class Read>
+inline Copy peek(size_t n, Read read) {
+  Copy c{Load::Empty, 0, 0};
+  if (n == 0) return c;
+  c.load = Load::WrongSize;
+  Header h;
+  if (n < sizeof(Header) || read(0, (uint8_t*)&h, sizeof(h)) != sizeof(h)) return c;
+  bool current = false;
+  c.load = checkHeader(h, n, current);
+  if (c.load != Load::Ok) return c;
+  uint8_t buf[256];
+  uint32_t crc = 0xFFFFFFFFu;
+  for (size_t at = 0; at < h.size;) {
+    const size_t len = h.size - at < sizeof(buf) ? h.size - at : sizeof(buf);
+    if (read(sizeof(Header) + at, buf, len) != len) { c.load = Load::WrongSize; return c; }
+    for (size_t i = 0; i < len; i++) {
+      crc ^= buf[i];
+      for (int k = 0; k < 8; k++) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    at += len;
+  }
+  if (~crc != h.crc) { c.load = Load::BadChecksum; return c; }
+  read(sizeof(Header) + playMsAt(current), (uint8_t*)&c.playMs, sizeof(c.playMs));
+  if (const size_t t = deckTagAt(current, h.version)) read(sizeof(Header) + t, (uint8_t*)&c.tag, sizeof(c.tag));
+  return c;
+}
+
+// Read a save straight into `s`, `read(at, buf, len)` as in peek(). Today's
+// layout borrows no memory at all: `s` is the only room it needs, so on
+// anything but Ok, `s` holds rubbish and the caller must not use it (the boot
+// then loads the other copy, or starts a new career). Only a 72-relic save
+// borrows a block to move it into today's layout, and NoMemory says that block
+// wasn't there.
+template <class Read>
+inline Load decodeInto(size_t n, Read read, Saved& s) {
+  if (n == 0) return Load::Empty;
+  if (n < sizeof(Header)) return Load::WrongSize;
+  Header h;
+  if (read(0, (uint8_t*)&h, sizeof(h)) != sizeof(h)) return Load::WrongSize;
+  bool current = false;
+  const Load l = checkHeader(h, n, current);
+  if (l != Load::Ok) return l;
   if (current) {
-    memset(check, 0, sizeof(Saved));
-    memcpy(check, in + sizeof(Header), h.size);
-    if (h.version < 6) memset(&check->heard, 0, sizeof(check->heard));   // the old tail padding isn't a log
-    if (h.version < 7) memset(&check->moments, 0, sizeof(check->moments));   // nor the walks' block
+    memset(&s, 0, sizeof(Saved));
+    if (read(sizeof(Header), (uint8_t*)&s, h.size) != h.size) return Load::WrongSize;
+    if (crc32((const uint8_t*)&s, h.size) != h.crc) return Load::BadChecksum;
+    if (h.version < 6) memset(&s.heard, 0, sizeof(s.heard));   // the old tail padding isn't a log
+    if (h.version < 7) memset(&s.moments, 0, sizeof(s.moments));   // nor the walks' block
   } else {   // a 72-relic save: read it as one, then move it into today's layout
     Saved72* old = (Saved72*)malloc(sizeof(Saved72));
-    if (!old) { free(check); return Load::WrongSize; }
+    if (!old) return Load::NoMemory;
     memset(old, 0, sizeof(Saved72));
-    memcpy(old, in + sizeof(Header), h.size);
+    if (read(sizeof(Header), (uint8_t*)old, h.size) != h.size) { free(old); return Load::WrongSize; }
+    if (crc32((const uint8_t*)old, h.size) != h.crc) { free(old); return Load::BadChecksum; }
     if (h.version < 4) memset(&old->wells, 0, sizeof(old->wells));   // the old tail padding isn't a well book
     memset(&old->heard, 0, sizeof(old->heard));                         // nor a HEARD log
     memset(&old->moments, 0, sizeof(old->moments));                     // nor the walks' block
-    upgrade(*old, *check);
+    upgrade(*old, s);
     free(old);
   }
-  const bool ok = valid(*check);
-  if (ok) memcpy(&s, check, sizeof(Saved));
-  free(check);
-  return ok ? Load::Ok : Load::Invalid;
+  return valid(s) ? Load::Ok : Load::Invalid;
 }
+
+// Read a save made by encode() from memory. On anything but Ok, `s` is left
+// alone: this one reads into a borrowed copy first, so it's for tests and
+// tools. The Deck boots through decodeInto().
+inline Load decode(const uint8_t* in, size_t n, Saved& s) {
+  auto read = [in, n](size_t at, uint8_t* buf, size_t len) -> size_t {
+    if (at >= n) return 0;
+    const size_t k = len < n - at ? len : n - at;
+    memcpy(buf, in + at, k);
+    return k;
+  };
+  Saved* check = (Saved*)malloc(sizeof(Saved));
+  if (!check) return Load::NoMemory;
+  const Load l = decodeInto(n, read, *check);
+  if (l == Load::Ok) memcpy(&s, check, sizeof(Saved));
+  free(check);
+  return l;
+}
+
+// Which copy a boot loads, given what each of the two copies (flash, and the SD
+// card's backup) looks like and its play clock. The play clock only goes up, so
+// the copy with more play on it is the newer: normally the flash one, unless
+// saving to flash has been failing.
+enum class Boot : uint8_t {
+  Fresh,         // no save anywhere: a new career, nothing to say
+  Flash,         // the flash copy
+  Card,          // the card's copy, the flash holding none
+  CardNewer,     // the card's copy, newer than the flash one
+  CardDamaged,   // the card's copy, the flash one broken
+  SetAside,      // nothing loads: what's there is set aside, and a new career starts
+  Newer,         // a newer Tithe's save: stop, and write nothing
+  NoMemory,      // no memory to read it: stop, and write nothing
+};
+// `deck`: this Deck's tag. A card's copy from another Deck is never "newer": a
+// card moved between Decks mustn't replace this one's career.
+inline Boot chooseBoot(const Copy& flash, const Copy& card, uint16_t deck) {
+  if (flash.load == Load::NewerVersion || card.load == Load::NewerVersion) return Boot::Newer;
+  if (flash.load == Load::NoMemory || card.load == Load::NoMemory) return Boot::NoMemory;
+  if (flash.load == Load::Ok) {
+    const bool mine = card.tag == 0 || card.tag == deck;
+    return card.load == Load::Ok && mine && card.playMs > flash.playMs ? Boot::CardNewer : Boot::Flash;
+  }
+  if (card.load == Load::Ok) return flash.load == Load::Empty ? Boot::Card : Boot::CardDamaged;
+  return flash.load == Load::Empty && card.load == Load::Empty ? Boot::Fresh : Boot::SetAside;
+}
+
+// The boot loads the card's copy.
+inline bool fromCard(Boot b) { return b == Boot::Card || b == Boot::CardNewer || b == Boot::CardDamaged; }
 
 } // namespace SaveFormat
 } // namespace Game

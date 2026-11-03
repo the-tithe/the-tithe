@@ -46,9 +46,10 @@ inline void holdNote(const char* s, uint16_t c, bool follows) {
   heldFollows[nHeld++] = follows;
 }
 
+// Never on a dimmed or face-down screen, where it would go by unread.
 inline void showHeld(const Ctx& c) {
   if (c.gyro && c.motion.stillFor < 0.5f) heldThisStop = false;
-  if (!nHeld || toastT > 0 || nToastNext > 0 || (heldThisStop && !heldFollows[0]) || mode == Mode::Boot) return;
+  if (!nHeld || !c.st.awake || toastT > 0 || nToastNext > 0 || (heldThisStop && !heldFollows[0]) || ceremonyScreen()) return;
   if (c.gyro && !(c.motion.viewing() && c.motion.stillFor >= HeldStill)) return;
   toast(heldText[0], heldColor[0], 2.0f);
   dropHeld(0);
@@ -151,7 +152,8 @@ inline uint16_t weekNow() { return (uint16_t)(inRun() ? run().runNo : game.caree
 
 inline void keepNamesake(WellRec& w) {
   Game::Moments& m = game.moments;
-  if (m.nNamesakes == Game::Moments::MaxNamesakes) {   // full: the oldest gives way
+  const bool full = m.nNamesakes == Game::Moments::MaxNamesakes;
+  if (full) {   // the oldest gives way
     memmove(&m.namesakes[0], &m.namesakes[1], sizeof(m.namesakes[0]) * (m.nNamesakes - 1));
     m.nNamesakes--;
   }
@@ -163,6 +165,7 @@ inline void keepNamesake(WellRec& w) {
   char b[40];
   snprintf(b, sizeof(b), "NAMESAKE: %s", w.name);
   holdNote(b, UI::Accent);
+  if (full) holdNote("THE OLDEST NAMESAKE FADED", UI::Dim, true);
   teachHeld(Taught::Namesake, "A NAMESAKE: SAME NAME, ANOTHER WELL", "= MARKS IT ON THE SCANNER");
   momentsDirty = true;
 }
@@ -216,6 +219,11 @@ inline bool strayCould(const WellRec& w, const Sightings& sky, bool homeHere) {
   return !(m.strayWeek == run().runNo && m.strayNight == run().night);
 }
 
+// The one waiting is kept in the save (Moments::adrift) until it's kept or gone,
+// so a restart doesn't lose tonight's.
+static_assert(Strays::Shapes <= 8 && Strays::Hands <= 4096, "Moments::adrift packs the shape over the hand");
+inline uint16_t packAdrift(int shape, uint16_t hand) { return (uint16_t)(0x8000u | (unsigned)shape << 12 | (hand & Strays::HandMask)); }
+
 inline void startStray(int shape, uint16_t hand, uint16_t name) {
   Game::Moments& m = game.moments;
   adrift = Adrift{true, (uint8_t)shape, (uint16_t)(hand & Strays::HandMask), name, (uint16_t)run().runNo,
@@ -223,8 +231,27 @@ inline void startStray(int shape, uint16_t hand, uint16_t name) {
   m.strayWeek = (uint16_t)run().runNo;
   m.strayNight = (uint8_t)run().night;
   m.newSinceStray = 0;
-  teachHeld(Taught::Glyph, "A GLYPH DRIFTS BY. PRESS G, HOLD STILL", "ONCE IT SETTLES, ENTER KEEPS IT");
+  m.adrift = packAdrift(shape, hand);
+  teachHeld(Taught::Glyph, "A GLYPH DRIFTS BY. PRESS G, HOLD STILL");
   momentsDirty = true;
+}
+
+// It's kept, broken up or drifted off.
+inline void strayGone() {
+  adrift.on = false;
+  if (game.moments.adrift) { game.moments.adrift = 0; save(); }
+}
+
+// After a restart: tonight's, if it was still waiting. It waits its full time again.
+inline void restoreStray() {
+  Game::Moments& m = game.moments;
+  if (!m.adrift) return;
+  if (!inRun() || game.phase != Game::Phase::Night || m.strayWeek != (uint16_t)run().runNo || m.strayNight != run().night) {
+    m.adrift = 0;   // that Night is over
+    return;
+  }
+  adrift = Adrift{true, (uint8_t)((m.adrift >> 12) & 7), (uint16_t)(m.adrift & Strays::HandMask), 0, m.strayWeek,
+                  m.strayNight, game.playMs, 0, false, -1};
 }
 
 // Each frame: it draws itself while the glass is still, breaks up on a flick,
@@ -235,7 +262,7 @@ inline bool tickStray(const Ctx& c, float dt, Tune& out) {
   if (!a.on) return false;
   if (a.scatter >= 0) {
     a.scatter += dt;
-    if (a.scatter > StrayScatterSecs) a.on = false;
+    if (a.scatter > StrayScatterSecs) strayGone();
     return false;
   }
   if (mode == Mode::Glass) {
@@ -256,7 +283,7 @@ inline bool tickStray(const Ctx& c, float dt, Tune& out) {
     return false;
   }
   const uint32_t waited = game.playMs - a.since;
-  if ((waited >= StrayWaitMs && game.moments.newSinceStray >= StrayWaitWells) || waited >= StrayGoneMs) a.on = false;
+  if ((waited >= StrayWaitMs && game.moments.newSinceStray >= StrayWaitWells) || waited >= StrayGoneMs) strayGone();
   return false;
 }
 
@@ -265,14 +292,15 @@ inline bool straySettled() { return adrift.on && adrift.scatter < 0 && adrift.dr
 // ENTER on a settled one: into the FOUND tab, exactly as drawn.
 inline void keepStray() {
   Game::Moments& m = game.moments;
-  if (m.nMarks == Game::Moments::MaxMarks) {   // full: the oldest gives way
+  const bool full = m.nMarks == Game::Moments::MaxMarks;
+  if (full) {   // the oldest gives way
     memmove(&m.marks[0], &m.marks[1], sizeof(m.marks[0]) * (m.nMarks - 1));
     m.nMarks--;
   }
   m.marks[m.nMarks++] = Game::Mark{adrift.hand, adrift.name, adrift.week, adrift.night, adrift.shape};
   if (m.marksKept < 0xFFFF) m.marksKept++;
-  adrift.on = false;
-  toast("KEPT", Strays::Chalk);
+  strayGone();
+  toast(full ? "KEPT. THE OLDEST MARK FADED" : "KEPT", Strays::Chalk, full ? 2.5f : 1.6f);
   save(true);
 }
 

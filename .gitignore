@@ -9,3 +9,6 @@ firmware/shots/
 firmware/manual/pages/
 __pycache__/
 .DS_Store
+
+# Release files, made by tools/release_image.sh
+release/

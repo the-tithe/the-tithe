@@ -117,6 +117,11 @@ enum Relic : uint8_t {
   R_picnic_blanket,
   R_postcard,
   R_film_canister,
+  R_pedometer,
+  R_mixtape,
+  R_rain_gauge,
+  R_prism_jar,
+  R_seed_vault,
   RelicCount
 };
 inline const RelicDef Relics[RelicCount] = {
@@ -133,13 +138,13 @@ inline const RelicDef Relics[RelicCount] = {
   {"borderwalker", "Borderwalker", 0, 4, 1, "+2.5 Amp with 4-15 wells in range", "Not the city, not the woods. Yours.", Stat::None, 0, -1, "", 0x6, false, false, true},
   {"porch_light", "Porch light", 0, 4, 0, "+4 Thirst at Hearth wells (home networks)", "Someone left it on for you.", Stat::None, 0, -1, "", 0xF, false, false, true},
   {"threshold", "Threshold", 1, 4, 2, "x1.5 Amp if you've changed wards since your last visit", "Every doorway is a little spell.", Stat::ward_changes_night, 8, -1, "Change wards 8 times in one Night", 0xF, false, false, true},
-  {"picket_fence", "Picket fence", 1, 4, 1, "Gains +0.25 Amp for every offering at a Hearth well", "Every house on the street knows you.", Stat::hearth_sales, 30, -1, "Make offerings at 30 Hearth wells", 0xF, false, false, true},
+  {"picket_fence", "Picket fence", 1, 4, 1, "Gains +0.75 Amp for every offering at a Hearth well", "Every house on the street knows you.", Stat::hearth_sales, 30, -1, "Make offerings at 30 Hearth wells", 0xF, false, false, true},
   {"long_walk", "Long walk", 0, 14, 1, "+0.25 Amp per ward entered tonight", "The legs remember what the map forgets.", Stat::None, 0, -1, "", 0xF, false, false, true},
-  {"first_light", "First light", 0, 14, 1, "+4 Amp at a well you've never visited before", "New wells are always the sweetest.", Stat::new_wells_run, 25, -1, "Find 25 new wells in one week", 0xF, false, false, true},
+  {"first_light", "First light", 0, 14, 1, "+4 Amp at a well you've never offered at", "New wells are always the sweetest.", Stat::new_wells_run, 25, -1, "Find 25 new wells in one week", 0xF, false, false, true},
   {"cartographer", "Cartographer", 1, 14, 0, "+1 Thirst for every 6 new wells found this week", "Ink, mostly. And a little blood.", Stat::None, 0, -1, "", 0xF, false, false, true},
-  {"wanderlust", "Wanderlust", 1, 14, 2, "x1.5 Amp at a well you've never visited before", "Somewhere else is always louder.", Stat::new_wells_night, 8, -1, "Find 8 new wells in one Night", 0xF, false, false, true},
-  {"pilgrims_staff", "Pilgrim's staff", 2, 14, 2, "Gains x0.05 Amp for every new well you find. Never resets.", "Worn smooth by a hundred doorways.", Stat::unique_wells, 100, -1, "Find 100 different wells, across all weeks", 0xF, false, false, true},
-  {"hearthstone", "Hearthstone", 0, 9, 0, "+3 Units at a well you've visited before", "Warm from your hand, every morning.", Stat::None, 0, -1, "", 0xF, false, false, true},
+  {"wanderlust", "Wanderlust", 1, 14, 2, "x1.5 Amp at a well you've never offered at", "Somewhere else is always louder.", Stat::new_wells_night, 8, -1, "Find 8 new wells in one Night", 0xF, false, false, true},
+  {"pilgrims_staff", "Pilgrim's staff", 2, 14, 2, "Gains x0.15 Amp for every new well you find. Never resets.", "Worn smooth by a hundred doorways.", Stat::unique_wells, 100, -1, "Find 100 different wells, across all weeks", 0xF, false, false, true},
+  {"hearthstone", "Hearthstone", 0, 9, 0, "+3 Units at a well you offered at on an earlier Night", "Warm from your hand, every morning.", Stat::None, 0, -1, "", 0xF, false, false, true},
   {"commuters_charm", "Commuter's charm", 1, 9, 2, "x1.5 Amp at a well you've visited on 3+ Nights (x2 from Night 5)", "Same train, same well, same luck.", Stat::None, 0, -1, "", 0xF, false, false, true},
   {"well_worn_path", "Well-worn path", 1, 9, 1, "+1 Amp for each Night you've visited this well", "Your footprints are the floor now.", Stat::same_well_nights, 7, -1, "Visit the same well on all 7 Nights", 0xF, false, false, true},
   {"keystone", "Keystone", 2, 9, 9, "Your glyphs are twice as strong", "Carve it deep enough and the city carves back.", Stat::glyphs_total, 10, -1, "Carve 10 glyphs", 0xF, false, false, false},
@@ -155,11 +160,11 @@ inline const RelicDef Relics[RelicCount] = {
   {"mixed_blessing", "Mixed blessing", 0, 13, 0, "+3 Thirst when your hold carries 3+ kinds of energy", "A little of everything, a lot of luck.", Stat::None, 0, -1, "", 0xF, false, false, true},
   {"prism_wheel", "Prism wheel", 1, 13, 1, "+1.5 Amp for each kind of energy you've offered tonight", "Turn it and the light changes color.", Stat::kinds_night, 5, -1, "Offer all five energies in one Night", 0xF, false, false, true},
   {"spectrum", "Spectrum", 2, 13, 2, "x(1 + 0.3 for each kind of energy offered tonight beyond the first)", "All five colors. The world goes white.", Stat::win_with, 1, 33, "Hold a week with Prism wheel", 0xF, false, false, true},
-  {"static_eater", "Static eater", 0, 10, 0, "+5 Thirst on Static. Static never leaks and raises no Heat.", "It hums when it's hungry.", Stat::None, 0, -1, "", 0xF, false, false, true},
-  {"smugglers_lining", "Smuggler's lining", 1, 10, 0, "+5 Units on Static", "The coat is bigger on the inside. Don't ask.", Stat::static_sold, 25, -1, "Offer Static 25 times", 0xF, false, false, true},
+  {"static_eater", "Static eater", 0, 10, 0, "Static turns up more often and gets +5 Thirst. It never leaks or raises Heat.", "It hums when it's hungry.", Stat::None, 0, -1, "", 0xF, false, false, true},
+  {"smugglers_lining", "Smuggler's lining", 1, 10, 0, "+5 Units on Static, and Static turns up more often", "The coat is bigger on the inside. Don't ask.", Stat::static_sold, 25, -1, "Offer Static 25 times", 0xF, false, false, true},
   {"devils_meter", "Devil's meter", 1, 10, 2, "x(1 + Heat) Amp. Wardens show up more often.", "The needle only moves one way.", Stat::None, 0, -1, "", 0xF, true, false, true},
-  {"black_ledger", "Black ledger", 2, 10, 2, "Gains x0.2 Amp every time you offer Static. Never resets.", "Each line a debt, each debt a promise.", Stat::static_sold, 50, -1, "Offer Static 50 times", 0xF, false, false, true},
-  {"wanted_poster", "Wanted poster", 2, 10, 2, "x3 Amp while Heat is 3 or more", "Your face, but younger. They used an old photo.", Stat::static_sold, 75, -1, "Offer Static 75 times", 0xF, false, false, true},
+  {"black_ledger", "Black ledger", 2, 10, 2, "Static turns up more often. Gains x0.6 Amp per Static offering. Never resets.", "Each line a debt, each debt a promise.", Stat::static_sold, 50, -1, "Offer Static 50 times", 0xF, false, false, true},
+  {"wanted_poster", "Wanted poster", 2, 10, 2, "x3 Amp while Heat is 3 or more, and Static turns up more often", "Your face, but younger. They used an old photo.", Stat::static_sold, 75, -1, "Offer Static 75 times", 0xF, false, false, true},
   {"hushed_step", "Hushed step", 0, 5, 1, "+3 Amp at a Hush well or when offering Hush", "Walk like you're not there.", Stat::hidden_found, 10, -1, "Find 10 Hush wells", 0xF, false, false, true},
   {"ghost_key", "Ghost key", 1, 5, 1, "+5 Amp at Hush wells, which count as all five energies", "It opens doors that don't have names.", Stat::None, 0, -1, "", 0xF, false, false, true},
   {"hush_lantern", "Hush lantern", 2, 5, 2, "x2 Amp on Hush, and Hush turns up three times as often", "Its light makes no sound.", Stat::None, 0, -1, "", 0xF, false, false, true},
@@ -172,9 +177,9 @@ inline const RelicDef Relics[RelicCount] = {
   {"first_bell", "First bell", 0, 12, 1, "+8 Amp on the first visit of each Night", "Whoever rings it first gets heard.", Stat::one_visit_close, 1, -1, "Pay a Tithe in a single visit", 0xF, false, false, true},
   {"night_shift", "Night shift", 1, 12, 1, "+0.5 Amp for each visit already used tonight", "The later it gets, the better you get.", Stat::None, 0, -1, "", 0xF, false, false, true},
   {"witching_hour", "Witching hour", 1, 12, 9, "On the visit that closes the Night, x3 Amp", "Midnight is a door. Walk out rich.", Stat::None, 0, -1, "", 0xF, false, false, false},
-  {"patience", "Patience", 2, 12, 1, "Gains +1 Amp per visit left unused when a Night closes. Never resets.", "The Hum pays those who don't need it.", Stat::fast_closes, 3, -1, "Pay 3 Tithes in a row with 6+ visits to spare", 0xF, false, false, true},
-  {"tally_stick", "Tally stick", 0, 12, 1, "Gains +1 Amp every time you pay a Tithe. Never resets.", "A notch a night. It's getting crowded.", Stat::None, 0, -1, "", 0xF, false, false, true},
-  {"ritual_candle", "Ritual candle", 1, 12, 2, "Gains x0.15 Amp every time you pay a Tithe. Never resets.", "It burns longer each night. Don't ask.", Stat::nights_paid, 20, -1, "Pay 20 Tithes", 0xF, false, false, true},
+  {"patience", "Patience", 2, 12, 1, "Gains +3 Amp per visit left unused when a Night closes. Never resets.", "The Hum pays those who don't need it.", Stat::fast_closes, 3, -1, "Pay 3 Tithes in a row with 6+ visits to spare", 0xF, false, false, true},
+  {"tally_stick", "Tally stick", 0, 12, 1, "Gains +3 Amp every time you pay a Tithe. Never resets.", "A notch a night. It's getting crowded.", Stat::None, 0, -1, "", 0xF, false, false, true},
+  {"ritual_candle", "Ritual candle", 1, 12, 2, "Gains x0.45 Amp every time you pay a Tithe. Never resets.", "It burns longer each night. Don't ask.", Stat::nights_paid, 20, -1, "Pay 20 Tithes", 0xF, false, false, true},
   {"hoard", "Hoard", 1, 8, 2, "x(1 + 0.02 per coin held), up to x2", "It isn't about spending it. It never was.", Stat::max_coin, 40, -1, "Hold 40 coin at once", 0xF, false, false, true},
   {"doppel", "Doppel", 1, 2, 3, "The first offering of each Night counts twice", "Two of you at the well. One pays.", Stat::sales_total, 150, -1, "Make 150 offerings", 0xF, false, false, true},
   {"echo_chamber", "Echo chamber", 2, 2, 3, "Every third offering counts twice", "Say it once, hear it twice, get paid for both.", Stat::None, 0, -1, "", 0xF, false, false, true},
@@ -190,24 +195,24 @@ inline const RelicDef Relics[RelicCount] = {
   {"grid_saint", "The Grid Saint", 3, 11, 2, "x(1 + 0.1 per well in range)", "She was a switchboard once. Now she is the switchboard.", Stat::school_win, 1, 11, "Hold a week with 2 Throng relics", 0xF, false, true, true},
   {"the_unheard", "The Unheard", 3, 5, 2, "Every well counts as hidden. x2 Amp on Hush.", "...", Stat::school_win, 1, 5, "Hold a week with 2 Hidden relics", 0xF, false, true, true},
   {"seven_league_boots", "Seven-league boots", 3, 14, 2, "x0.1 Amp for every new well found this week", "One step, one ward. Mind the curb.", Stat::school_win, 1, 14, "Hold a week with 2 Wayfaring relics", 0xF, false, true, true},
-  {"old_keeper", "The Old Keeper", 3, 9, 2, "x3 Amp at wells you've visited before", "He has watched this street for a hundred years. He likes you.", Stat::school_win, 1, 9, "Hold a week with 2 Refrain relics", 0xF, false, true, true},
+  {"old_keeper", "The Old Keeper", 3, 9, 2, "x3 Amp at wells you offered at on an earlier Night", "He has watched this street for a hundred years. He likes you.", Stat::school_win, 1, 9, "Hold a week with 2 Refrain relics", 0xF, false, true, true},
   {"midnight_engine", "The Midnight Engine", 3, 12, 3, "Every offering counts twice", "Tick. Tick. Tick. Tick.", Stat::school_win, 1, 12, "Hold a week with 2 Tempo relics", 0xF, false, true, true},
   {"laundromat_token", "Laundromat token", 0, 8, 1, "+1 Amp for every 5 coin you hold (up to +4)", "Good for one load. Never once used for laundry.", Stat::None, 0, -1, "", 0xF, false, false, true},
   {"bus_fare", "Bus fare", 0, 8, 1, "+5 Amp while you hold 4 coin or less", "Exact change, and not a token more.", Stat::broke_shop, 1, -1, "Leave a stall with 0 coin", 0xF, false, false, true},
-  {"piggy_bank", "Piggy bank", 1, 8, 1, "Gains +0.5 Amp per coin of interest you earn. Never resets.", "Shake it. It sounds like next week.", Stat::max_coin, 25, -1, "Hold 25 coin at once", 0xF, false, false, true},
-  {"long_receipt", "Long receipt", 2, 8, 2, "x(1 + 0.05 per coin spent at the last stall), up to x3", "Itemized, folded twice, kept for no reason.", Stat::rares_bought, 3, -1, "Buy 3 rare relics", 0xF, false, false, true},
+  {"piggy_bank", "Piggy bank", 1, 8, 1, "Gains +1.5 Amp per coin of interest you earn. Never resets.", "Shake it. It sounds like next week.", Stat::max_coin, 25, -1, "Hold 25 coin at once", 0xF, false, false, true},
+  {"long_receipt", "Long receipt", 2, 8, 2, "x(1 + 0.05 per coin spent at the last stall, minus sales), up to x3", "Itemized, folded twice, kept for no reason.", Stat::rares_bought, 3, -1, "Buy 3 rare relics", 0xF, false, false, true},
   {"odd_socks", "Odd socks", 0, 13, 1, "+4 Amp when you offer a different energy than last time", "They match. Just not each other.", Stat::None, 0, -1, "", 0xF, false, false, true},
   {"tasting_spoon", "Tasting spoon", 1, 13, 2, "x2 Amp on the first offering of each energy tonight", "Just a little of each. To be sure.", Stat::None, 0, -1, "", 0xF, false, false, true},
   {"charm_bracelet", "Charm bracelet", 2, 13, 2, "x(1 + 0.4 per kind of energy in your hold beyond the first)", "One charm for every town she left.", Stat::win_with, 1, 32, "Hold a week with Mixed blessing", 0xF, false, false, true},
-  {"one_way_ticket", "One-way ticket", 1, 0, 2, "x2.5 Amp, but wells you've visited before earn nothing", "Nobody buys these by accident.", Stat::new_wells_run, 40, -1, "Find 40 new wells in one week", 0xF, true, false, true},
+  {"one_way_ticket", "One-way ticket", 1, 0, 2, "x2.5 Amp, but wells you offered at on an earlier Night earn nothing", "Nobody buys these by accident.", Stat::new_wells_run, 40, -1, "Find 40 new wells in one week", 0xF, true, false, true},
   {"empty_frame", "Empty frame", 2, 0, 2, "x(1 + 0.5 for each empty relic slot)", "Nobody in it yet. Keep it that way.", Stat::op_nights, 5, -1, "Pay 5 Tithes at 3x or more", 0xF, true, false, true},
   {"spare_key", "Spare key", 0, 4, 1, "+1 Amp for every 10 standing with the Hearth", "Under the mat, where it always is.", Stat::None, 0, -1, "", 0xF, false, false, true},
   {"garden_gate", "Garden gate", 1, 4, 2, "x1.5 Amp in a Fringe ward, x2 if you just changed wards", "Never quite shut. Never quite open.", Stat::None, 0, -1, "", 0x2, false, false, true},
   {"chalk_stub", "Chalk stub", 1, 9, 2, "x1.5 Amp at a well you've carved a glyph into", "Worn to a nub on other people's walls.", Stat::None, 0, -1, "", 0xF, false, false, true},
   {"bus_pass", "Bus pass", 1, 9, 3, "Offerings count twice at wells you've visited every Night", "Punched every morning. Never missed one.", Stat::wins, 2, -1, "Hold 2 weeks", 0xF, false, false, true},
-  {"key_ring", "Key ring", 2, 9, 2, "At wells you've visited before: x(1 + 0.25 per Night there)", "A key for every door that ever let you in.", Stat::win_with, 1, 19, "Hold a week with Hearthstone", 0xF, false, false, true},
+  {"key_ring", "Key ring", 2, 9, 2, "At wells you offered at on an earlier Night: x(1 + 0.25 per Night there)", "A key for every door that ever let you in.", Stat::win_with, 1, 19, "Hold a week with Hearthstone", 0xF, false, false, true},
   {"thermos", "Thermos", 0, 5, 0, "+4 Units on Hush", "Keeps cold things cold, and quiet things quiet.", Stat::nights_paid, 5, -1, "Pay 5 Tithes", 0xF, false, false, true},
-  {"locked_diary", "Locked diary", 2, 5, 2, "Gains x0.15 Amp at every Hush well. Never resets.", "The lock is tiny. That's not the point.", Stat::win_with, 1, 42, "Hold a week with Hush lantern", 0xF, false, false, true},
+  {"locked_diary", "Locked diary", 2, 5, 2, "Gains x0.45 Amp at every Hush well. Never resets.", "The lock is tiny. That's not the point.", Stat::win_with, 1, 42, "Hold a week with Hush lantern", 0xF, false, false, true},
   {"tote_bag", "Tote bag", 1, 2, 3, "Offerings of 12 or more Units count twice", "Holds more than it should. Says so on the side.", Stat::big_units, 12, -1, "Offer 12 units at once", 0xF, false, false, true},
   {"seashell", "Seashell", 2, 2, 3, "Counts twice if you've changed wards since your last visit", "Hold it to your ear. Someone else's sea.", Stat::big_sale_nexus, 10000, -1, "Make a 10,000-Resonance offering in a Nexus ward", 0xF, false, false, true},
   {"earplugs", "Earplugs", 0, 1, 1, "+0 to +4 Amp, rising the quieter it is around you (microphone)", "Everything goes quiet except the part you want.", Stat::None, 0, -1, "", 0x3, false, false, true},
@@ -216,6 +221,11 @@ inline const RelicDef Relics[RelicCount] = {
   {"picnic_blanket", "Picnic blanket", 0, 6, 0, "+3 Units in a Hollow ward (0-3 wells)", "Spread it wherever nobody else is.", Stat::None, 0, -1, "", 0x1, false, false, true},
   {"postcard", "Postcard", 0, 14, 1, "+1 Amp for each new well you've found tonight", "Wish you were here. You were, for a minute.", Stat::new_wells_night, 5, -1, "Find 5 new wells in one Night", 0xF, false, false, true},
   {"film_canister", "Film canister", 1, 10, 2, "x2 Amp on Static while Heat is under 1", "Nothing in here, officer. Just film.", Stat::win_with, 1, 35, "Hold a week with Static eater", 0xF, false, false, true},
+  {"pedometer", "Pedometer", 0, 12, 1, "Gains +0.9 Amp for every offering you make. Never resets.", "It counts the walk, not the reason.", Stat::None, 0, -1, "", 0xF, false, false, true},
+  {"mixtape", "Mixtape", 0, 13, 1, "Gains +3 Amp whenever you switch energy. Never resets.", "Side A, side B, side A.", Stat::None, 0, -1, "", 0xF, false, false, true},
+  {"rain_gauge", "Rain gauge", 0, 7, 0, "Gains +1.5 Thirst every time you draw. Never resets.", "It fills whether anyone checks it or not.", Stat::None, 0, -1, "", 0xF, false, false, true},
+  {"prism_jar", "Prism jar", 1, 13, 2, "Gains x0.3 Amp per energy you offer each Night. Never resets.", "Five colors under one lid.", Stat::None, 0, -1, "", 0xF, false, false, true},
+  {"seed_vault", "Seed vault", 1, 8, 2, "Gains x0.3 Amp per coin of interest you earn. Never resets.", "Nothing grows in there while you keep opening it.", Stat::None, 0, -1, "", 0xF, false, false, true},
 };
 
 struct TrinketDef { const char* key; const char* name; const char* text; const char* flavor; Stat unlock; int32_t need; const char* unlockText; };
@@ -274,9 +284,9 @@ inline const SpellDef Spells[SpellCount] = {
   {"veil", "VEIL", "Static: no Heat and +3 Thirst tonight", "Nobody saw anything.", Stat::static_sold, 10, "Offer Static 10 times", 1.0f},
   {"chalk", "CHALK", "Carve a random glyph into this well", "Your mark, their wall.", Stat::None, 0, "", 1.0f},
   {"kindle", "KINDLE", "Give a random relic a shine", "A little fire in the glass.", Stat::editions_owned, 1, "Own a relic with a shine", 0.6f},
-  {"augur", "AUGUR", "Clear tonight's Omen", "Read the signs again. Squint.", Stat::omens_seen, 10, "See 10 Omens", 0.8f},
+  {"augur", "AUGUR", "Clear tonight's Omen and undo what it took. Not a Wardens walk.", "Read the signs again. Squint.", Stat::omens_seen, 10, "See 10 Omens", 0.8f},
   {"recall", "RECALL", "Get back the last spell you used", "Again, with feeling.", Stat::spells_cast, 20, "Cast 20 spells", 0.6f},
-  {"bargain", "BARGAIN", "The next stall is half price", "Closing-down sale. Everything must go.", Stat::broke_shop, 1, "Leave a stall with 0 coin", 0.6f},
+  {"bargain", "BARGAIN", "Relics and wares at the next stall are half price", "Closing-down sale. Everything must go.", Stat::broke_shop, 1, "Leave a stall with 0 coin", 0.6f},
   {"summon", "SUMMON", "A legendary relic, into a free slot", "Something answers. Be polite.", Stat::wins, 3, "Hold 3 weeks", 0.08f},
 };
 
@@ -343,7 +353,7 @@ inline const ModDef Mods[ModCount] = {
   {"true_north", "True north", "Dowsing finds a well on a third of your visits", 4},
   {"overstock", "Overstock", "+1 relic at every stall", -1},
   {"night_market", "Night market", "+1 spell, glyph or Attunement at every stall", 6},
-  {"clearance", "Clearance", "Everything at the stall costs 1 less", -1},
+  {"clearance", "Clearance", "Relics and wares at the stall cost 1 less", -1},
   {"liquidation", "Liquidation", "Rerolls cost 2 less", 8},
   {"fifth_pocket", "Fifth pocket", "+1 spell slot", -1},
   {"sixth_socket", "Sixth socket", "+1 relic slot", 10},
@@ -373,7 +383,7 @@ inline const PortentDef Portents[PortentCount] = {
   {"windfall", "Windfall", "+10 coin"},
   {"doubled_interest", "Doubled interest", "Interest pays double tonight"},
   {"free_rerolls", "Free rerolls", "Two free rerolls at the next stall"},
-  {"shine", "Shine", "Your next relic comes with a shine"},
+  {"shine", "Shine", "A relic at the next stall comes with a shine"},
   {"tuning", "Tuning", "+1 Attunement on your focus energy"},
   {"scroll", "Scroll", "A free spell"},
   {"chalk_mark", "Chalk mark", "A free glyph to carve into any well"},
@@ -443,7 +453,7 @@ enum Calling : uint8_t {
 inline const CallingDef Callings[CallingCount] = {
   {"wayfarer", "Wayfarer", "No twist. The Deck as it comes.", Stat::None, 0, ""},
   {"hedge_witch", "Hedge witch", "Starts with Static eater and Static-caller. Wardens never appear.", Stat::None, 0, ""},
-  {"hermit", "Hermit", "Starts with Hearthstone. Wells you've visited before can be drawn twice a Night.", Stat::None, 0, ""},
+  {"hermit", "Hermit", "Starts with Hearthstone. A well you offered at on an earlier Night can be drawn twice.", Stat::None, 0, ""},
   {"courier", "Courier", "Units x1.4 on every draw, but only 10 visits per Night", Stat::wins, 1, "Hold a week"},
   {"diviner", "Diviner", "Starts with Lodestone and True north. You see each Omen two Nights early.", Stat::dowses, 30, "Dowse 30 times"},
   {"night_clerk", "Night clerk", "Interest cap doubled, but rerolls cost 2 more", Stat::max_coin, 30, "Hold 30 coin at once"},
@@ -457,10 +467,10 @@ inline const CallingDef Callings[CallingCount] = {
 
 struct PactDef { const char* name; const char* text; };
 constexpr int PactCount = 8;
-inline const PactDef Pacts[PactCount] = {{"Chalk", "Nothing added. The Deck as it comes."}, {"Lead", "The Tithe pays no coin at dawn. Live on trade, favors and spare visits."}, {"Iron", "One visit fewer each Night: 11, not 12."}, {"Ash", "Every offering lands lighter: Units x0.9."}, {"Bone", "Relics don't all last: some on the stall are Withered and crumble after 3 Nights."}, {"Silver", "Rerolls start at 8 coin, and Polish costs twice as much."}, {"Obsidian", "No Syndicate loan, and candles cost twice as much."}, {"Gold", "One fewer relic slot."}};
+inline const PactDef Pacts[PactCount] = {{"Chalk", "Nothing added. The Deck as it comes."}, {"Lead", "The Tithe pays no coin at dawn. Live on trade, favors and spare visits."}, {"Iron", "Nights 5, 6 and 7 ask x1.25, x1.5, x1.75. Buy what grows before you need it."}, {"Ash", "The same energy twice in a row pays 30% less. Carry more than one."}, {"Bone", "Relics don't all last: some on the stall are Withered and crumble after 3 Nights."}, {"Silver", "Rerolls start at 8 coin, and Polish costs twice as much."}, {"Obsidian", "No Syndicate loan, and candles cost twice as much."}, {"Gold", "One fewer relic slot."}};
 struct ChallengeDef { const char* name; const char* text; };
 constexpr int ChallengeCount = 10;
-inline const ChallengeDef Challenges[ChallengeCount] = {{"Shoestring", "You can never hold more than 15 coin"}, {"One note", "Pilgrim rules, and the stall only stocks Callers, Attunements and Polish"}, {"Night owl", "8 visits per Night, but Portents start at 4 visits to spare"}, {"Glass house", "Start with Glass crown. It can't be sold or swapped out, and Tithes are x2.5."}, {"Static storm", "Every well is an open network. Heat never cools."}, {"The long way", "Wells you've visited before earn nothing"}, {"Homebody", "From Night 2, you can only visit wells you've visited before, but they take offerings and refill all Night"}, {"Empty pockets", "No stall. Each Night you pay brings a free relic and an Attunement instead."}, {"Grand tour", "Visit all four kinds of ward each Night, or the Tithe doubles"}, {"Redline", "Start with Overclock and Witching hour, and 2 extra visits a Night to run them. Tithes x2.5."}};
+inline const ChallengeDef Challenges[ChallengeCount] = {{"Shoestring", "You can never hold more than 15 coin"}, {"One note", "Pilgrim rules, and the stall only stocks Callers, Attunements and Polish"}, {"Night owl", "8 visits per Night, but Portents start at 4 visits to spare"}, {"Glass house", "Start with Glass crown. It can't be sold or swapped out, and Tithes are x2.5."}, {"Static storm", "Every well is an open network. Heat never cools."}, {"The long way", "Wells you offered at on an earlier Night earn nothing"}, {"Homebody", "From Night 2, you can only offer where you offered on an earlier Night, but those wells refill all Night"}, {"Empty pockets", "No stall. Each Night you pay brings a free relic and an Attunement instead."}, {"Grand tour", "Visit all four kinds of ward each Night, or the Tithe doubles"}, {"Redline", "Start with Overclock and Witching hour, and 2 extra visits a Night to run them. Tithes x2.5."}};
 struct PageDef { const char* title; const char* unlockText; const char* theme; Stat unlock; int32_t need; };
 constexpr int PageCount = 12;
 inline const PageDef Pages[PageCount] = {
@@ -479,6 +489,6 @@ inline const PageDef Pages[PageCount] = {
 };
 
 // Changes whenever anything a save refers to by number is added, removed or reordered.
-constexpr uint32_t CatalogHash = 0x0B3467EAu;
+constexpr uint32_t CatalogHash = 0x9E3EDFC0u;
 
 } // namespace Cat

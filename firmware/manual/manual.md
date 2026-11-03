@@ -35,7 +35,7 @@ Every WiFi router leaves an uncanny trace in the air, the *current*. Left unmove
 
 1. Put in a microSD card and turn the Deck on. It opens on BIND A NEW WEEK.
 2. Keep WAYFARER (the starting setup) and CHALK (the easiest difficulty). Go down to BIND and press ENTER, then ENTER on THE CURRENT, and again on NIGHT 1.
-3. The *scanner* is the Deck's main screen, and it lists the wells around you with the loudest at the top. Walk until one says IN REACH or NEAR. The \* marks the best one.
+3. The *scanner* is the Deck's main screen, and it lists the wells around you with the loudest at the top. Walk until one says IN REACH or NEAR. The \* marks the best one, and when it's further down the list than the screen shows, the bottom line says \* BELOW.
 4. Select it and press ENTER twice to visit.
 5. Choose a DRAW line and hold the Deck still while it draws.
 6. Choose OFFER. Press ENTER when the well stops ringing.
@@ -62,7 +62,7 @@ This is where you'll spend most of a Night. Reading from the top:
 
 | QUARTER 11 WELLS | Your ward (see WARDS) and the wells in range |
 | BAR | Tonight's Resonance against the Tithe |
-| ~2 MORE | After your first offering: about how many more the Tithe needs. Red when that's more than you have left. |
+| TO GO | The Resonance still to make before the Tithe is paid |
 | TICKS | Under the bar: where 6, 9 and 11 visits to spare land (see DAWN PAY) |
 | N1 | Night 1 |
 | 11 LEFT | Visits left |
@@ -76,7 +76,7 @@ This is where you'll spend most of a Night. Reading from the top:
 | = | A namesake: a well with the same true name as one you've worked (see WELLS) |
 | DIAMOND | A glyph you carved there (see GLYPHS). A hollow one in the header: a glyph adrift (see THE SCRYING GLASS). |
 
-On the harder Pacts, BONE and up (see PACTS), the Deck keeps the MORE count and the ticks to itself.
+On the harder Pacts, BONE and up (see PACTS), the Deck keeps the ticks to itself.
 
 :::
 
@@ -89,8 +89,8 @@ Mom works nights on the phone company's repair line, so most of the time there's
 ![game_visit_after_draw](After a draw, OFFER appears.)
 
 1. DRAW takes the well's energy into your *hold*, the energy you carry with you. Stand closer for more.
-2. You get one draw per well, and then the well needs 20 minutes to settle. Each Binding has a *focus* energy, Ember, Tide or Gale (see ENERGIES), and some wells offer it on a second DRAW line, with its symbol on their page. Choose one line.
-3. Hold the Deck still while it draws, or some spills.
+2. After a draw a well needs 20 minutes to settle, and then you can draw from it again. Once you've offered at a well tonight, it gives one draw each time it settles, and you have to offer there again before the next. Each Binding has a *focus* energy, Ember, Tide or Gale (see ENERGIES), and some wells offer it on a second DRAW line, with its symbol on their page. Choose one line.
+3. Hold the Deck still while it draws, or some spills. A ring closes around the energy's mark first, so you get a moment to settle after pressing the key. If a relic turns the draw into another energy, the draw names the relic.
 4. OFFER gives everything you hold of one energy to this well. Only offerings use visits; draws are free.
 5. Some wells show FAVOR, a small job that pays as much coin as two to four offerings. It's worth saying yes at a well you're using anyway.
 
@@ -125,7 +125,7 @@ The Night ends the moment your Resonance reaches the Tithe, however many visits 
 ::: The Collector
 
 1. The Collector's stall opens after every paid Night.
-2. The \* marks what would help you most, and says about how many fewer offerings a Night it saves. When polishing a relic you already hold beats anything on the shelf, the star sits on the YOURS tab (see POLISH). From BONE up (see PACTS) there's no star.
+2. The \* marks what would help you most. When polishing a relic you already hold beats anything on the shelf, the star sits on the YOURS tab (see POLISH). From BONE up (see PACTS) there's no star.
 3. The first stall always stocks the *Caller* for your focus. It raises that energy's Thirst for the rest of the Binding.
 4. ESC leaves, and the next Night begins.
 
@@ -246,7 +246,7 @@ The well in the apartment over the pharmacy is called Feral Pantry, which is the
 @cols 10
 
 | IN REACH | Very close. The biggest draws. Some relics pay extra. |
-| NEAR | Close enough to use. |
+| NEAR | Close enough to use. A well you open while it's NEAR stays NEAR while you walk away, until it fades well into FAR. |
 | FAR | In range, too far to use. |
 | FAINT | Barely in range. Doesn't count toward the ward (see WARDS). |
 | LOST | Missing from the last few scans. |
@@ -259,7 +259,7 @@ Every well can be worked from somewhere public, so you never need to go inside a
 
 ::: Wards
 
-The number of wells in range sets your *ward*, and the ward changes what wells pay. Faint wells don't count, and the ward changes only once two scans in a row agree.
+The number of wells in range sets your *ward*, and the ward changes what wells pay. Faint wells don't count, and the ward changes only once two scans in a row agree. Until they do, the header shows the ward the count points to, dimmed, after an arrow.
 
 @cols 10
 
@@ -308,7 +308,7 @@ The stairwell by the gym is fine now, and kids sit on it at lunch. Nobody notice
 
 ::: Hold and Thirst
 
-1. Held energy slowly leaks away as you walk, except Hush, which never does. You carry up to 8 units in all; a Satchel (a Deck mod, see WARES) adds more.
+1. Held energy leaks away as you walk, one unit every 15 minutes, and the Deck tells you when it does. Hush never leaks. You carry up to 8 units in all, and a Satchel (a Deck mod, see WARES) adds more. When the hold is nearly full, the DRAW line shows only what fits, and the rest stays in the well.
 2. Thirst depends on the energy, the well (each has favorites), the ward, and your *standing* with its faction (see FACTIONS).
 3. In a Quarter or Nexus, a settled well that's already had an offering tonight wants less (Thirst x0.75), so a well at 8 drops to 6.
 4. A well's own page shows its Thirst for what you're carrying, where you stand. Relics add to it when you offer.
@@ -342,7 +342,7 @@ The first time I got to Night 7 it was THE HUNGER. I paid it outside the pharmac
 
 ::: Omens
 
-Nights 2 to 6 each bring an *Omen*, one rule for that Night only, shown in YOUR BUILD (press B). Except from BONE up (see PACTS), the stall shows the next one in its top corner, and the Tithe it names already counts it. The Diviner, a Calling you unlock later, sees two Nights ahead.
+Nights 2 to 6 each bring an *Omen*, one rule for that Night only, shown in YOUR BUILD (press B). Except from BONE up (see PACTS), the stall shows the next one in its top corner, and the Tithe it names already counts it. The Diviner, a Calling you unlock later, sees two Nights ahead. A Charm ward, a mod from the stall, turns each Omen away half the time, so the stall adds a ? to whatever the Omen would change, and the Night's first screen says when the ward has worked.
 
 @cols 12
 
@@ -362,7 +362,7 @@ Nights 2 to 6 each bring an *Omen*, one rule for that Night only, shown in YOUR 
 
 ::: The Eclipse
 
-Night 7 has an *Eclipse* instead, and Night 1 tells you which one.
+Night 7 has an *Eclipse* instead, and Night 1 tells you which one. An Eclipse ward turns it away half the time, and Night 7's first screen says when it has.
 
 @cols 12
 
@@ -388,10 +388,13 @@ When the visits run out before the Tithe, the Deck offers four ways out:
 
 ::: Dawn pay
 
-1. Dawn pays coin for each offering, each spare visit and, on the CHALK Pact (see PACTS), the Tithe. Coin you're holding earns *interest*, 1 for every 5 held, up to 5.
-2. Pay with 6 visits to spare and you get a *Portent*, which might be coin, a spell, a relic or a better stall. With 9 to spare you get two, and with 11 you get three. On the first three Pacts (CHALK, LEAD and IRON) each one comes as a choice of two; pick with up and down, and ENTER keeps it.
-3. Pay with 1 visit or fewer to spare, or after a candle or a loan, and the Collector shows *mercy*, and the next stall adds a relic at half price, a free reroll and +1 Attunement (see WARES) on your focus.
-4. Each dawn's coin comes with a token. Its kind depends on where you offered that Night; about one dawn in forty brings one NOT FROM HERE. GRIMOIRE > FOUND > TOKENS keeps them.
+1. Dawn pays coin for each offering, each spare visit and, on the CHALK Pact (see PACTS), the Tithe. Coin you're holding earns *interest*, 1 for every 5 held, up to 5. On SHOESTRING (see TRIALS) the dawn shows in red what the 15 cap took.
+2. Pay with 6 visits to spare and you get a *Portent*, which might be coin, a spell, a relic or a better stall. With 9 to spare you get two, and with 11 you get three. On the first three Pacts (CHALK, LEAD and IRON) each one comes as a choice of two; pick with up and down, and ENTER keeps it. The dawn says what each Portent brought.
+3. If a Portent brings a relic or a spell and your slots are full, you can sell one of your relics or forget one of your spells to take it, or press ESC twice to leave it. EMPTY POCKETS' relic of the Night waits the same way.
+4. One dawn never brings two of a Portent that only works once, and it leaves out the ones your week can't use.
+5. Pay with 1 visit or fewer to spare, or after a candle or a loan, and the Collector shows *mercy*, and the next stall adds a relic at half price, a free reroll and +1 Attunement (see WARES) on your focus. The half-price relic finds a place even on a full shelf. On ONE NOTE, mercy brings only the Attunement.
+6. On BONE and up (see PACTS), a withered relic crumbles at a dawn, and the dawn names it. A withered relic lasts 3 Nights, even one that came at a dawn.
+7. Each dawn's coin comes with a token. Its kind depends on where you offered that Night; about one dawn in forty brings one NOT FROM HERE. GRIMOIRE > FOUND > TOKENS keeps them.
 
 :::
 
@@ -421,8 +424,11 @@ The stuff on the Collector's shelf belonged to listeners who stopped. The notebo
 ![game_shop_wares](The WARES tab.)
 
 1. The stall has three tabs, and left and right switch between them. RELICS are objects that change what an offering makes, and you keep them for the Binding. WARES is everything else it sells, and YOURS is the relics you hold.
-2. R rerolls the relics for 3 coin, and each reroll after that at the same stall costs 2 more.
-3. You can hold 5 relics, and X sells one back. Once all 5 are full, polish what you have (see POLISH).
+2. R rerolls the relics for 3 coin, and each reroll after that at the same stall costs 2 more. The wares stay as they are. If the shelf holds something a reroll would throw away (mercy's half-price relic, the first stall's Caller, a Rare sight rare or your shine), R asks twice. On ONE NOTE there's nothing to reroll.
+3. You can hold 5 relics, and X sells one back for half its full price. BARGAIN and the Clearance mod lower only what you pay for relics and wares, so they don't touch Polish, rerolls or what a sale brings, and a sale doesn't refund Polish. Once all 5 are full, polish what you have (see POLISH).
+4. You can carry 8 relics at most, and Phantoms count toward that even though they take no slot.
+5. The stall doesn't stock what can't help your week, such as another energy's Caller or the Sixth socket for a PILGRIM, or the Moneylender from OBSIDIAN up.
+6. Most relics on the shelf add. Relics that multiply are rarer, and relics that *grow* turn up more often than the rest. A growing relic starts at nothing and gains a little each time its condition comes up, all week, so the \* never marks it; it's worth what it will be on Night 7.
 
 :::
 
@@ -436,10 +442,10 @@ I've started saying prices the way it does. Mom asked how much the milk was and 
 
 ::: Wares
 
-- *Attunement*: +1 Amp on one energy for the rest of the Binding.
+- *Attunement*: +1 Amp on one energy for the rest of the Binding. A PILGRIM or ONE NOTE week always tunes the focus.
 - *Spells*: each one works once. You hold up to 2 (see SPELLS), and with no room left you choose one to forget.
 - *Glyphs*: a mark to carve into a well (see GLYPHS). You carry up to 4.
-- *Trinkets*: coin and utility, in 2 slots of their own.
+- *Trinkets*: coin and utility, in 2 slots of their own. Once both are full, the stall shows FULL where the price would be.
 - *Deck mods*: upgrades to the Deck for the Binding.
 - *Faction relics*: with good standing, a faction adds a relic to the shelf.
 
@@ -456,7 +462,9 @@ Amp starts at 1, and the first step of the offering count is ATTUNED, your Attun
 3. Relics that multiply Amp.
 4. Relics that make the offering count again.
 
-Adding grows slowly and multiplying compounds, so +2 Amp on top of 1 makes 3, and x2 on top of that makes 6. (TANGLED LINES runs it the other way: x2 is 2, then +2 is 4.) Once an offering finishes, up and down scroll through every step, and ENTER leaves. ESC leaves at once, even mid-count.
+Adding grows slowly and multiplying compounds, so +2 Amp on top of 1 makes 3, and x2 on top of that makes 6. Relics that grow (Tally stick, Pedometer, Ritual candle and the rest) add or multiply by whatever they've gained so far, and YOUR BUILD shows how far each has come. (TANGLED LINES runs it the other way: x2 is 2, then +2 is 4.) Once an offering finishes, up and down scroll through every step, and ENTER leaves. ESC leaves at once, even mid-count.
+
+Everything that changes the three numbers gets a step of its own, so they always multiply to the total. That includes what the ward and tonight's Omen do to your Units, what the ASH Pact and the Fade do to your Thirst, VEIL, a glyph and every relic. A relic that fires again for Copycat sigil or Overtone says COPIED or OVERTONE. When an offering makes nothing, the line under the total says why.
 
 :::
 
@@ -475,7 +483,7 @@ Every relic carries its last owner's *habit*, the way they listened. Relics with
 | REFRAIN | Wells you visit again and again |
 | ELEMENTAL | One energy, pushed hard |
 | VARIETY | A mix of energies |
-| SMUGGLING | Static, and Heat |
+| SMUGGLING | Static, and Heat. Four of its relics make Static turn up in your draws more often. |
 | HIDDEN | Hush and hidden networks |
 | MACHINE | Channels, distance, mesh networks |
 | TEMPO | When in the Night you offer |
@@ -488,13 +496,13 @@ Every relic carries its last owner's *habit*, the way they listened. Relics with
 
 ::: Polish
 
-On the YOURS tab, ENTER polishes a relic. You can polish it three times, and each time makes it half again as strong.
+On the YOURS tab, ENTER polishes a relic. You can polish it three times, and each time makes it half again as strong. A relic with nothing to polish shows - in place of a price.
 
 :::
 
 ::: Shines
 
-Some relics have a *shine*:
+A Shine Portent puts a shine on one relic at the next stall, and that relic's details say YOUR SHINE. Some relics have a *shine*:
 
 - {static}GILT{/}: 2 coin at the end of every Night.
 - {static}LIT{/}: +3 Amp.
@@ -525,9 +533,11 @@ Press C for the spell list.
 | SURGE | Next draw: x2.5 units |
 | TRANSMUTE | Your hold becomes your focus, and so do your draws for the next 4 offerings |
 | HASTE | +2 visits tonight |
-| ECHO | Offer to any well you've visited before, from anywhere |
+| ECHO | Offer to any well in your atlas, from anywhere |
 | HEX | +8 coin |
 | CHALK | Carve a random glyph into this well |
+
+A spell that's already set up, like a GLAMOUR waiting for your next offering, says READY on the list, and the Deck won't let you cast a second one until it's used. An ECHO offering is priced where you're standing, and relics that read a well's channel or signal don't fire from afar.
 
 :::
 
@@ -535,7 +545,7 @@ The notebook says a spell is a bit of the current's music, kept like a sound in 
 
 ::: Glyphs
 
-A *glyph* changes what a well pays you for the rest of the Binding. Buy one on the WARES tab or cast CHALK, then carve it from the well's visit menu. A carved well shows a diamond on the scanner. Carving again replaces the glyph.
+A *glyph* changes what a well pays you for the rest of the Binding. Buy one on the WARES tab or cast CHALK, then carve it from the well's visit menu. A carved well shows a diamond on the scanner. Carving again replaces the glyph, so the Deck asks for a second ENTER first.
 
 @cols 10
 
@@ -594,8 +604,8 @@ The one at the laundromat is on tile, though, not brick.
 
 ::: Heat
 
-1. Static offerings raise your *Heat*, and other offerings cool it. Press B to see it.
-2. At Heat 2 an eye opens at the top of the scanner, with your Heat beside it. At Heat 3 it turns red and the *Wardens* listen: any offering may be taken, Static or not, for no Resonance and no coin.
+1. A Static offering raises your *Heat* by 0.5, and every offering cools it by 0.1, Static included. In a STATIC STORM nothing cools it. Press B to see it.
+2. At Heat 2 an eye opens at the top of the scanner, with your Heat beside it. At Heat 3 it turns red and the *Wardens* listen: any offering may be taken, Static or not, for no Resonance and no coin. The visit menu warns you before you offer.
 3. TWIST hides you from them for a minute (see GESTURES AND STILLNESS).
 
 :::
@@ -633,13 +643,13 @@ There's a woman at the 14 stop who sits really still at night with her phone fla
 
 ::: Gestures and stillness
 
-These only count while you hold the Deck up to look at it.
+These only count while you hold the Deck up to look at it, and not while it's drawing, showing an offering, or at the stall.
 
 @cols 10
 
 | STILL | Hold steady a few seconds. Hush wells show their names, draws don't spill, and some relics pay more. |
 | SNAP | Flick your wrist. The Deck rescans, and Hush wells show for 4 seconds. Sometimes you overhear something. |
-| TWIST | Twist and back. The Wardens can't hear you for a minute. Once a Night. |
+| TWIST | Twist and back. The Wardens can't hear you for a minute. Once a Night: a second twist only says NO WARD LEFT TONIGHT. |
 
 :::
 
@@ -661,7 +671,7 @@ A *Calling* is your starting setup, meaning the relics you begin with and someti
 
 | WAYFARER | The standard start |
 | HEDGE WITCH | Two Static relics. The Wardens never come. |
-| HERMIT | Built around wells you've visited before |
+| HERMIT | Built around wells you offered at on an earlier Night |
 
 :::
 
@@ -673,8 +683,8 @@ A *Pact* sets the difficulty. Each Pact adds to the ones before it, so IRON is L
 
 | CHALK | No change |
 | LEAD | The Tithe pays no coin at dawn |
-| IRON | 11 visits a Night |
-| ASH | Units x0.9 |
+| IRON | Nights 5, 6 and 7 ask x1.25, x1.5, x1.75 |
+| ASH | The same energy twice in a row pays 30% less |
 | BONE | Some relics vanish 3 Nights after you buy them |
 | SILVER | Rerolls start at 8, Polish costs double |
 | OBSIDIAN | No loan, candles cost double |
@@ -695,8 +705,8 @@ After your first held week, BIND A NEW WEEK gets a fourth row, TRIAL. A *Trial* 
 | NIGHT OWL | 8 visits a Night; Portents from 4 to spare |
 | GLASS HOUSE | Start with Glass crown, which you can't sell. Tithes x2.5. |
 | STATIC STORM | Every well is Static. Heat never cools. |
-| THE LONG WAY | Wells you've visited before earn nothing |
-| HOMEBODY | From Night 2, only wells you've visited before. They refill all Night. |
+| THE LONG WAY | Wells you offered at on an earlier Night earn nothing |
+| HOMEBODY | From Night 2, only wells you offered at on an earlier Night. They refill all Night. |
 | EMPTY POCKETS | No stall. Each paid Night brings a relic and an Attunement. |
 | GRAND TOUR | Visit all four wards each Night, or the Tithe doubles |
 | REDLINE | Start with Overclock and Witching hour, and 2 extra visits. Tithes x2.5. |
@@ -708,13 +718,13 @@ I have two seals, Chalk and Lead. Nobody's ever going to see them, and I check t
 ::: Unlocks and the Grimoire
 
 1. Most unlocks come from things you do in the world, like going downtown, finding Hush wells, dowsing, paying a Tithe on a nearly flat battery.
-2. Unlocks are revealed when the Binding ends, two at a time. The rest wait for the next week.
+2. Unlocks are revealed when the Binding ends, two at a time. The rest wait for the next week. If you switch off on the reveal, it comes back when you switch on.
 3. A Grimoire page opens when you've done what its writer did. Read them in order and they tell you why the streets are going stale. Each page is also a *theme*, so ENTER on an open page gives the Deck its colors.
-4. Your rank rises with every Tithe you pay. Everyone starts as a {yellow}LISTENER{/}. BIND A NEW WEEK and the menu show it in the top corner, and YOUR BUILD shows the next one.
+4. Your rank rises with every Tithe you pay. Everyone starts as a {yellow}LISTENER{/}, and the Deck says so when you reach a new rank. BIND A NEW WEEK and the menu show it in the top corner, and YOUR BUILD shows the next one.
 5. A locked relic, page or Calling says what opens it, and how close you are when it's something you get better at. A few say nothing at all.
 6. Left and right in the Grimoire switch tabs: RELICS (every relic you've seen; HELD marks the ones you held a week with), RECORDS (your bests and where they happened), HEARD (every overheard fragment and Collector line you've caught), FOUND (what your walks turn up; see FOUND) and STREETS (the list of kept streets in the back).
-7. STREETS opens with the Wells page. Walk the same stretch on three different Nights and the Deck asks A STREET YOU KEEP?; then STREETS offers ADD. Type your initials and a name (capitals, digits, space, hyphen and apostrophe), and it's written in under the others, in your own hand, dated by week. ENTER twice on one of yours crosses it out.
-8. Pay all seven Tithes and the Deck offers OVERNIGHT: more Nights, each Tithe double the last, with Omens as before and an Eclipse every third Night. End the week whenever you like; it still counts as held.
+7. STREETS opens with the Wells page. Walk the same stretch on three different Nights and the Deck asks A STREET YOU KEEP?; then STREETS offers ADD. Type your initials and a name (capitals, digits, space, hyphen and apostrophe), and it's written in under the others, in your own hand, dated by week. ENTER twice on one of yours crosses it out. There's room for four of your own. Once all four are written, the next one replaces the oldest you've crossed out, and if none is crossed out, the Deck says STREETS FULL.
+8. Pay all seven Tithes and the Deck offers OVERNIGHT: more Nights, each Tithe bigger than the last by more each time (x2, then x2.5, then x3), with Omens as before and an Eclipse every third Night. End the week whenever you like; it still counts as held.
 9. Relics and coin stay with the week, and the Grimoire keeps the rest.
 
 ![game_grimoire](Pages open one at a time.)
@@ -727,9 +737,9 @@ The Grimoire's FOUND tab keeps what your walks turn up. ENTER opens a section.
 
 @cols 9
 
-| MARKS | Drifting glyphs you kept, as they were drawn |
+| MARKS | Drifting glyphs you kept, as they were drawn. It holds 24, and the oldest fades when you keep another. |
 | WELLS | A field guide: eight odd kinds of well, each filled in when you first meet one |
-| NAMESAKES | Wells with the true name of one you've worked |
+| NAMESAKES | Wells with the true name of one you've worked. It holds 32, and the oldest fades to make room. |
 | WORDS | The words true names are made of, as you hear them |
 | TOKENS | What came with each dawn's coin, by kind |
 | WALKS | Your last seven walks as ribbons, in the colors of the wards you passed. A tick marks each offering. |
@@ -742,11 +752,13 @@ I'm a WELLWRIGHT now. I told Priya and she said congratulations, carefully.
 
 ::: Setup
 
-1. Put a microSD card in before you turn the Deck on. It holds a backup of your save and the walk logs.
-2. Turn the Deck on. KEYS SEALED, GRIMOIRE SD OK, EARS OPEN and BALANCE TRUE mean it's ready.
-3. NO CARD means there's no backup. Push the card in and press R.
+1. Put a microSD card in before you turn the Deck on. It holds a backup of your save and the walk logs, and it must be formatted FAT32.
+2. Turn the Deck on. KEYS SEALED, GRIMOIRE SD OK, EARS OPEN and BALANCE TRUE mean it's ready. On the very first boot KEYS says NEW, because the Deck has just made its secret key.
+3. NO CARD means there's no backup. Push the card in, then open the walk log (S) and press R.
+4. EXFAT, GPT, NTFS or UNREAD means the Deck can't read how the card is formatted, and NO WRITE means it can read the card but can't write to it. See Troubleshooting.
+5. BALANCE NONE means this Cardputer has no motion sensor. The game still plays, but without dowsing, the pulse, the ward or the veil, and Hush wells always show their names.
 
-![boot_3](All four lines lit means it's ready.)
+![boot_3](A Cardputer ADV, ready.)
 
 :::
 
@@ -761,17 +773,17 @@ I'm a WELLWRIGHT now. I told Priya and she said congratulations, carefully.
 | ENTER | Open, choose, buy. Glass: keep a settled glyph. The offering: leave once it's done. A Grimoire page: use its theme. The walk card: open the loudest well. |
 | ESC | Back. Scanner: the menu. The stall: leave it, and the next Night begins. The offering: skip the count and leave. |
 | DEL | ESC, except where you type: there it erases a letter first. |
-| TAB | Tag your place for the walk log |
+| TAB | Walk log: tag your place |
 | G | The scrying glass, and back |
 | S | The walk log, and back |
 | B | YOUR BUILD: relics, spells and Heat |
 | C | Cast a spell. Type its name to find it. |
 | D | On a well: dowse |
-| R | At the stall: reroll. Elsewhere: start or stop recording the walk. |
+| R | At the stall: reroll. Walk log: start or stop recording. |
 | X | YOURS tab: sell a relic |
 | M | Sound on or off |
 
-TAB, R and M work on the scanner, the glass, a well, and the walk log.
+M works on the scanner, the glass, a well, and the walk log.
 
 :::
 
@@ -782,13 +794,13 @@ TAB, R and M work on the scanner, the glass, a well, and the walk log.
 @cols 11
 
 | CONTINUE | Back to the street |
-| YOUR BUILD | Relics, spells, Heat, where tonight's Tithe comes from, and each Night of THE WEEK. Select any line to read what it does. |
+| YOUR BUILD | Five tabs. RELICS. TONIGHT: the Tithe and where it comes from, the Omen, favors, and anything set to fire. WARES: trinkets, spells, mods and glyphs. YOU: your Calling, Pact, focus, Attunement, Heat, standing and rank. THE WEEK: each Night so far. Select any line to read what it does. |
 | SPELLS | Cast one (see SPELLS) |
-| ATLAS | Every well you've visited, with your best and total offerings there, your Nights there this week, what it likes most and the ward it was in. Left and right change the order, show only this week's wells, or sort by PAYS MOST: what each would pay now for your hold, the ~ number. |
+| ATLAS | Every well you've visited, with your best and total offerings there, your Nights there this week, what it likes most and the ward it was in. Left and right change the order, show only this week's wells, or sort by PAYS MOST: what each would pay now for your hold, the ~ number. It holds 400 wells, and once it's full, the least-visited wells from earlier weeks fade to make room. |
 | GRIMOIRE | Pages, relics, records, what you've heard and found, and the streets |
 | THE CURRENT | The page you read when you first bound |
 | WALK LOG | What the Deck is recording (see THE WALK LOG) |
-| GIVE UP THIS WEEK | Ends the Binding. Asks twice. |
+| GIVE UP THIS WEEK | Ends the Binding. It asks twice: press ENTER again while the red warning shows. |
 | BIND A NEW WEEK | When no week is bound |
 | SOUND | On or off |
 
@@ -799,8 +811,11 @@ Under the menu: what you're holding, and weeks held.
 ::: Saving
 
 1. The Deck saves as you go, so you can turn it off at any time.
-2. A backup copy is kept on the card.
-3. Switched off, the Deck still knows how long it was off (OFF FOR at boot) and lets wells settle meanwhile.
+2. A backup copy is kept on the card. If saving to the Deck's own memory fails, the Deck says SAVE FAILED and saves every change to the card instead. On the next boot it loads whichever copy is newer.
+3. Installed from the game file alone, M5Launcher 2.6 and later give the Deck no memory of its own to save in, so the card holds the only copy. The Tithe-v file from a release brings its own, so install that one. Deleting an old Tithe in M5Launcher can take that memory with it, but the card's copy loads at the next boot.
+4. When nothing can keep the game, the scanner's bottom line says NOT SAVING in red, and your progress ends when the Deck is switched off.
+5. Switched off, the Deck still knows how long it was off and lets wells settle meanwhile. After the boot it says OFF FOR and how many wells settled.
+6. It works this out from the routers it heard before it was switched off. If it hears none of them now, it says COULDN'T TELL HOW LONG IT WAS OFF, and wells still settling carry on from where they were.
 
 :::
 
@@ -808,8 +823,9 @@ Under the menu: what you're holding, and weeks held.
 
 1. When the Deck is set down or pocketed the screen dims, but in your hand it stays on.
 2. On a dimmed screen the first key only wakes it, and so does picking the Deck up.
-3. Face-down, the screen turns off and the Deck keeps listening.
-4. After a walk with it pocketed, past wells it had never heard, take it out and hold it still. A card shows what you passed, with the NEW wells the Deck had never heard, the hidden ones, the wards, and the loudest well, which ENTER opens.
+3. Face-down, the screen turns off and the Deck keeps listening, but it makes no sound. A tune or chime it would have played meanwhile isn't played later.
+4. Notes and messages wait while the screen is dimmed or off, and show once it's lit again.
+5. After a walk with it pocketed, past wells it had never heard, take it out and hold it still. A card shows what you passed, with the NEW wells the Deck had never heard, the hidden ones, the wards, and the loudest well, which ENTER opens.
 
 :::
 
@@ -825,8 +841,8 @@ Priya asked once what I was recording, and when I said the street, she said ever
 
 While a card is in, the Deck logs every scan. The logs are used to check the Deck's numbers against real streets.
 
-1. Recording starts at power-on, and REC shows at the bottom of the screen.
-2. Press TAB to tag where you are: home, street, transit, shop, work or park.
+1. Recording starts at power-on, and the walk log (S) shows REC while it records.
+2. On the walk log, press TAB to tag where you are: home, street, transit, shop, work or park.
 3. Spend at least 20 minutes in each kind of place you go.
 4. Walk your usual routes on 3 or more days.
 
@@ -850,10 +866,10 @@ In week eight the chalk at the laundromat was gone. The tile around it was still
 
 @cols 11
 
-| MADE NOTHING | The screen said WARDENS TOOK IT (see HEAT), or tonight's Omen is SILENT BELL. |
+| MADE NOTHING | The line under the total says why: WARDENS TOOK IT (see HEAT), tonight's Omen is SILENT BELL, THE LONG WAY at a well you offered at on an earlier Night, or Glass crown refusing that energy tonight. The visit menu says so before you offer. |
 | NO OFFER | OFFER only shows once you're holding energy. Draw first. |
 | CAN'T OFFER | The visit menu says why: too far, still settling, or Warded while you hold Static. |
-| HOLD SHRANK | Held energy leaks over time. Hush never does. |
+| HOLD SHRANK | Held energy leaks a unit every 15 minutes, and the Deck says which. Hush never does. A full hold takes only part of a draw. |
 | WELL DIMMED | Used and settling for 20 minutes, or out of range. |
 | NIGHT ENDED | You paid. A Night ends the moment Resonance reaches the Tithe. |
 | STAR MOVED | The star follows what you're holding and where you are. |
@@ -866,9 +882,18 @@ In week eight the chalk at the laundromat was gone. The tile around it was still
 @cols 11
 
 | NO WELLS | Wait a few seconds. The first scan takes about 2. Indoors with few networks, you may be in a Hollow. |
-| NO CARD | Push the microSD card all the way in and press R. |
+| NO CARD | Push the microSD card all the way in, then open the walk log (S) and press R. |
 | KEY IGNORED | A dimmed screen uses the first key to wake. Press again. |
-| SAVE LOST | A damaged save is set aside as deck.bad and the card copy loads. If both are gone, a new save starts. |
+| SAVE LOST | A damaged save is set aside as deck.bad (then deck.bad2, and so on, so none is ever replaced), and the card copy loads: SAVE DAMAGED: LOADED THE CARD COPY. If neither copy loads, a new career starts and the Deck says OLD SAVE SET ASIDE. |
+| NEWER TITHE | THIS SAVE IS FROM A NEWER TITHE means an older build was installed. The Deck stops there and leaves the save alone. Install the newer build again. |
+| SAVE FAILED | Saving to the Deck's own memory failed. Keep a card in, since it then holds the only up-to-date copy. |
+| NEWER SAVE ON THE CARD | The card went in after the Deck started, and its save has more play on it than the one running. The Deck leaves the card alone. Switch off and on to load the card's save. |
+| BACKUP STOPPED | The card stopped taking the backup. Push it all the way in. The Deck tries it again every 30 seconds, and the walk log starts a new walk when it's back. |
+| EXFAT, GPT, NTFS, UNREAD | The Deck reads FAT32 cards only. Cards of 64 GB and up come as exFAT, and a Mac can lay a card out as GPT. Copy off what you need, then format it FAT32 with a Master Boot Record (on a Mac: Disk Utility, Erase, MS-DOS (FAT), Master Boot Record). |
+| NO WRITE | The card can be read but wouldn't take a test file, so it's full, locked or failing. Free some space or try another card. |
+| NOT SAVING | Nothing can keep the game: the Deck has no memory of its own to save in, and there's no card that takes a save. Fix the card, or install the Tithe-v file from a release. |
+| KEYS NEW | A red KEYS NEW means the Deck lost its secret key and made a new one, so every well your save knows reads as new. A save from another Deck does the same (THIS SAVE WAS MADE ON ANOTHER DECK). |
+| DEAF | The radio didn't start, so the Deck can't hear any wells. Switch it off and on again. |
 
 :::
 
@@ -907,7 +932,7 @@ In week eight the chalk at the laundromat was gone. The tile around it was still
 | NOT FROM HERE | A dawn token nobody recognizes |
 | OFFER | Give energy to a well |
 | OMEN | Tonight's one rule |
-| OVERNIGHT | Nights past the seventh. Tithes double. |
+| OVERNIGHT | Nights past the seventh. Each Tithe climbs faster than the last. |
 | PACT | The difficulty |
 | POLISH | Make a relic stronger |
 | PORTENT | A gift for paying early |
@@ -947,7 +972,7 @@ I folded the last two pages shut. There's a word on each fold. Don't open one un
 
 {dim}FOLD 1: GO OVERNIGHT{/}
 
-I said yes to it, once. Seven Nights paid, and the Deck asked if I wanted to keep going. Every Tithe doubles after that. I lasted three more.
+I said yes to it, once. Seven Nights paid, and the Deck asked if I wanted to keep going. Every Tithe after that climbs faster than the one before. I lasted three more.
 
 I got home at two. Mom's shift runs until seven, so I wasn't being quiet. Her shoes were in the hall. She'd swapped her night. She was at the table with two cups out, and she didn't ask where I'd been. She asked if I'd eaten. I said yes, which was true in a broad sense.
 

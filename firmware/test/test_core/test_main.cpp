@@ -8,6 +8,7 @@
 #include "WalkFormat.h"
 #include "Tune.h"
 #include "Strays.h"
+#include "Storage.h"
 
 static Sightings sky;
 
@@ -451,6 +452,84 @@ static void test_each_glyph_has_its_rhythm() {
     }
 }
 
+
+// ---- Where the game is kept (Storage.h) ------------------------------------------
+
+static void sector(uint8_t* s, const char* oem, int at = 3) {
+  memset(s, 0x11, 512);
+  if (oem) memcpy(s + at, oem, strlen(oem));
+  s[510] = 0x55;
+  s[511] = 0xAA;
+}
+
+static void test_a_card_that_wont_mount_says_what_it_is() {
+  using K = CardFormat::Kind;
+  uint8_t s[512];
+  uint32_t next = 1;
+
+  sector(s, "EXFAT   ");   // exFAT with no partition table
+  TEST_ASSERT_EQUAL(K::ExFat, CardFormat::fromCard(s, next));
+  TEST_ASSERT_EQUAL(0, next);
+
+  sector(s, nullptr);   // a partition table: the first partition is read next
+  s[0x1BE + 4] = 0x07;
+  s[0x1BE + 8] = 0x00; s[0x1BE + 9] = 0x80; s[0x1BE + 10] = 0x00; s[0x1BE + 11] = 0x00;
+  TEST_ASSERT_EQUAL(K::Unknown, CardFormat::fromCard(s, next));
+  TEST_ASSERT_EQUAL(0x8000, next);
+  sector(s, "EXFAT   ");
+  TEST_ASSERT_EQUAL(K::ExFat, CardFormat::fromVolume(s));
+  sector(s, "NTFS    ");
+  TEST_ASSERT_EQUAL(K::Ntfs, CardFormat::fromVolume(s));
+  sector(s, "FAT32   ", 0x52);
+  TEST_ASSERT_EQUAL(K::Fat, CardFormat::fromVolume(s));
+
+  sector(s, nullptr);   // a Mac's GUID Partition Map
+  s[0x1BE + 4] = 0xEE;
+  TEST_ASSERT_EQUAL(K::Gpt, CardFormat::fromCard(s, next));
+
+  memset(s, 0, 512);
+  TEST_ASSERT_EQUAL(K::Blank, CardFormat::fromCard(s, next));
+  memset(s, 0xFF, 512);
+  TEST_ASSERT_EQUAL(K::Blank, CardFormat::fromCard(s, next));
+  sector(s, nullptr);   // a table with nothing in it
+  s[0x1BE + 4] = 0x00;
+  TEST_ASSERT_EQUAL(K::Blank, CardFormat::fromCard(s, next));
+  sector(s, nullptr);
+  s[510] = 0;   // no signature at all
+  TEST_ASSERT_EQUAL(K::Unknown, CardFormat::fromCard(s, next));
+}
+
+static void test_flash_is_formatted_only_when_nobodys_data_is_there() {
+  // Erased: anyone's to use.
+  TEST_ASSERT_TRUE(FlashArea::mayFormat(false, true, false));
+  TEST_ASSERT_TRUE(FlashArea::mayFormat(true, true, true));
+  // The Tithe's own area, new to this Deck: formatted.
+  TEST_ASSERT_TRUE(FlashArea::mayFormat(true, false, false));
+  // ...but not once this Deck has used it: the save may be in there.
+  TEST_ASSERT_FALSE(FlashArea::mayFormat(true, false, true));
+  // A shared area with something in it may be another app's.
+  TEST_ASSERT_FALSE(FlashArea::mayFormat(false, false, false));
+  TEST_ASSERT_FALSE(FlashArea::mayFormat(false, false, true));
+}
+
+static void test_every_card_problem_fits_and_says_what_to_do() {
+  using H = CardWords::CardState;
+  using K = CardFormat::Kind;
+  const H hs[] = {H::None, H::Ok, H::NoWrite, H::Format};
+  const K ks[] = {K::Unknown, K::Fat, K::ExFat, K::Ntfs, K::Gpt, K::Blank};
+  for (H h : hs)
+    for (K k : ks) {
+      const char* w = CardWords::word(h, k);
+      TEST_ASSERT_NOT_NULL(w);
+      TEST_ASSERT_TRUE_MESSAGE(strlen(w) <= 8, w);   // beside GRIMOIRE on the boot screen
+      const char* f = CardWords::fix(h, k);
+      TEST_ASSERT_EQUAL((h == H::NoWrite || h == H::Format), f != nullptr);
+      if (f) TEST_ASSERT_TRUE_MESSAGE(strlen(f) <= 36, f);   // one toast line
+    }
+  TEST_ASSERT_EQUAL_STRING("EXFAT", CardWords::word(H::Format, K::ExFat));
+  TEST_ASSERT_EQUAL_STRING("CARD IS EXFAT: FORMAT IT FAT32", CardWords::fix(H::Format, K::ExFat));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_siphash_reference_vectors);
@@ -480,5 +559,8 @@ int main() {
   RUN_TEST(test_every_stray_keeps_to_its_shape);
   RUN_TEST(test_loose_dots_above_a_mark_break_the_rule);
   RUN_TEST(test_each_glyph_has_its_rhythm);
+  RUN_TEST(test_a_card_that_wont_mount_says_what_it_is);
+  RUN_TEST(test_flash_is_formatted_only_when_nobodys_data_is_there);
+  RUN_TEST(test_every_card_problem_fits_and_says_what_to_do);
   return UNITY_END();
 }

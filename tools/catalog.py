@@ -93,7 +93,7 @@ relic("threshold", "Threshold", "uncommon", "fringe", 2,
       unlock=("ward_changes_night", 8, "Change wards 8 times in one Night"),
       fn=lambda c, r: c["ward_changed"] and c.__setitem__("x", c["x"] * 1.5))
 relic("picket_fence", "Picket fence", "uncommon", "fringe", 1,
-      "Gains +0.25 Amp for every offering at a Hearth well",
+      "Gains +0.75 Amp for every offering at a Hearth well",
       "Every house on the street knows you.",
       unlock=("hearth_sales", 30, "Make offerings at 30 Hearth wells"),
       fn=lambda c, r: c.__setitem__("mult", c["mult"] + st(r, "picket_fence")))
@@ -104,7 +104,7 @@ relic("long_walk", "Long walk", "common", "wayfaring", 1,
       "The legs remember what the map forgets.",
       fn=lambda c, r: c.__setitem__("mult", c["mult"] + 0.25 * c["wards_tonight"]))
 relic("first_light", "First light", "common", "wayfaring", 1,
-      "+4 Amp at a well you've never visited before",
+      "+4 Amp at a well you've never offered at",
       "New wells are always the sweetest.",
       unlock=("new_wells_run", 25, "Find 25 new wells in one week"),
       fn=lambda c, r: c["new"] and c.__setitem__("mult", c["mult"] + 4))
@@ -113,19 +113,19 @@ relic("cartographer", "Cartographer", "uncommon", "wayfaring", 0,
       "Ink, mostly. And a little blood.",
       fn=lambda c, r: c.__setitem__("price", c["price"] + int(r["new_wells"] / 6)))
 relic("wanderlust", "Wanderlust", "uncommon", "wayfaring", 2,
-      "×1.5 Amp at a well you've never visited before",
+      "×1.5 Amp at a well you've never offered at",
       "Somewhere else is always louder.",
       unlock=("new_wells_night", 8, "Find 8 new wells in one Night"),
       fn=lambda c, r: c["new"] and c.__setitem__("x", c["x"] * 1.5))
 relic("pilgrims_staff", "Pilgrim's staff", "rare", "wayfaring", 2,
-      "Gains ×0.05 Amp for every new well you find. Never resets.",
+      "Gains ×0.15 Amp for every new well you find. Never resets.",
       "Worn smooth by a hundred doorways.",
       unlock=("unique_wells", 100, "Find 100 different wells, across all weeks"),
       fn=lambda c, r: c.__setitem__("x", c["x"] * (1 + st(r, "pilgrims_staff"))))
 
 # --- Routine: the same wells, again ----------------------------------------------------
 relic("hearthstone", "Hearthstone", "common", "routine", 0,
-      "+3 Units at a well you've visited before",
+      "+3 Units at a well you offered at on an earlier Night",
       "Warm from your hand, every morning.",
       fn=lambda c, r: c["revisit"] and c.__setitem__("units", c["units"] + 3))
 relic("commuters_charm", "Commuter's charm", "uncommon", "routine", 2,
@@ -194,11 +194,11 @@ relic("spectrum", "Spectrum", "rare", "variety", 2,
 
 # --- Smuggling: Static and Heat ---------------------------------------------------------------
 relic("static_eater", "Static eater", "common", "smuggling", 0,
-      "+5 Thirst on Static. Static never leaks and raises no Heat.",
+      "Static turns up more often and gets +5 Thirst. It never leaks or raises Heat.",
       "It hums when it's hungry.",
       fn=lambda c, r: (c["e"] == "static" or c["ghost"]) and c.__setitem__("price", c["price"] + 5))
 relic("smugglers_lining", "Smuggler's lining", "uncommon", "smuggling", 0,
-      "+5 Units on Static",
+      "+5 Units on Static, and Static turns up more often",
       "The coat is bigger on the inside. Don't ask.",
       unlock=("static_sold", 25, "Offer Static 25 times"),
       fn=lambda c, r: c["e"] == "static" and c.__setitem__("units", c["units"] + 5))
@@ -207,12 +207,12 @@ relic("devils_meter", "Devil's meter", "uncommon", "smuggling", 2,
       "The needle only moves one way.", cursed=True,
       fn=lambda c, r: c.__setitem__("x", c["x"] * (1 + r["heat"])))
 relic("black_ledger", "Black ledger", "rare", "smuggling", 2,
-      "Gains ×0.2 Amp every time you offer Static. Never resets.",
+      "Static turns up more often. Gains ×0.6 Amp per Static offering. Never resets.",
       "Each line a debt, each debt a promise.",
       unlock=("static_sold", 50, "Offer Static 50 times"),
       fn=lambda c, r: c.__setitem__("x", c["x"] * (1 + st(r, "black_ledger"))))
 relic("wanted_poster", "Wanted poster", "rare", "smuggling", 2,
-      "×3 Amp while Heat is 3 or more",
+      "×3 Amp while Heat is 3 or more, and Static turns up more often",
       "Your face, but younger. They used an old photo.",
       unlock=("static_sold", 75, "Offer Static 75 times"),
       fn=lambda c, r: r["heat"] >= 3 and c.__setitem__("x", c["x"] * 3))
@@ -250,7 +250,7 @@ relic("channel_surfer", "Channel surfer", "uncommon", "machine", 2,
       "×1.75 Amp at a well on an odd channel (not 1, 6 or 11)",
       "Off the beaten band.",
       unlock=("channels_seen", 13, "Find wells on all 13 channels"),
-      fn=lambda c, r: c["channel"] not in (1, 6, 11) and c.__setitem__("x", c["x"] * 1.75))
+      fn=lambda c, r: c["channel"] not in (0, 1, 6, 11) and c.__setitem__("x", c["x"] * 1.75))   # 0: not known (ECHO)
 relic("overclock", "Overclock", "uncommon", "machine", 2,
       "×1.5 Amp on every offering, but 2 fewer visits per Night",
       "Run it hot. Apologize later.",
@@ -274,17 +274,17 @@ relic("witching_hour", "Witching hour", "uncommon", "timing", 9,
       "On the visit that closes the Night, ×3 Amp",
       "Midnight is a door. Walk out rich.", fn=None)
 relic("patience", "Patience", "rare", "timing", 1,
-      "Gains +1 Amp per visit left unused when a Night closes. Never resets.",
+      "Gains +3 Amp per visit left unused when a Night closes. Never resets.",
       "The Hum pays those who don't need it.",
       unlock=("fast_closes", 3, "Pay 3 Tithes in a row with 6+ visits to spare"),
       fn=lambda c, r: c.__setitem__("mult", c["mult"] + st(r, "patience")))
 
 relic("tally_stick", "Tally stick", "common", "timing", 1,
-      "Gains +1 Amp every time you pay a Tithe. Never resets.",
+      "Gains +3 Amp every time you pay a Tithe. Never resets.",
       "A notch a night. It's getting crowded.",
       fn=lambda c, r: c.__setitem__("mult", c["mult"] + st(r, "tally_stick")))
 relic("ritual_candle", "Ritual candle", "uncommon", "timing", 2,
-      "Gains ×0.15 Amp every time you pay a Tithe. Never resets.",
+      "Gains ×0.45 Amp every time you pay a Tithe. Never resets.",
       "It burns longer each night. Don't ask.",
       unlock=("nights_paid", 20, "Pay 20 Tithes"),
       fn=lambda c, r: c.__setitem__("x", c["x"] * (1 + st(r, "ritual_candle"))))
@@ -365,7 +365,7 @@ relic("seven_league_boots", "Seven-league boots", "legendary", "wayfaring", 2,
       unlock=("school_win", "wayfaring", "Hold a week with 2 Wayfaring relics"),
       fn=lambda c, r: c.__setitem__("x", c["x"] * (1 + 0.1 * r["new_wells"])))
 relic("old_keeper", "The Old Keeper", "legendary", "routine", 2,
-      "×3 Amp at wells you've visited before",
+      "×3 Amp at wells you offered at on an earlier Night",
       "He has watched this street for a hundred years. He likes you.", legendary=True,
       unlock=("school_win", "routine", "Hold a week with 2 Refrain relics"),
       fn=lambda c, r: c["revisit"] and c.__setitem__("x", c["x"] * 3))
@@ -385,11 +385,11 @@ relic("bus_fare", "Bus fare", "common", "money", 1,
       unlock=("broke_shop", 1, "Leave a stall with 0 coin"),
       fn=lambda c, r: r["coin"] <= 4 and c.__setitem__("mult", c["mult"] + 5))
 relic("piggy_bank", "Piggy bank", "uncommon", "money", 1,
-      "Gains +0.5 Amp per coin of interest you earn. Never resets.", "Shake it. It sounds like next week.",
+      "Gains +1.5 Amp per coin of interest you earn. Never resets.", "Shake it. It sounds like next week.",
       unlock=("max_coin", 25, "Hold 25 coin at once"),
       fn=lambda c, r: c.__setitem__("mult", c["mult"] + st(r, "piggy_bank")))
 relic("long_receipt", "Long receipt", "rare", "money", 2,
-      "x(1 + 0.05 per coin spent at the last stall), up to x3", "Itemized, folded twice, kept for no reason.",
+      "x(1 + 0.05 per coin spent at the last stall, minus sales), up to x3", "Itemized, folded twice, kept for no reason.",
       unlock=("rares_bought", 3, "Buy 3 rare relics"),
       fn=lambda c, r: c.__setitem__("x", c["x"] * (1 + st(r, "long_receipt"))))
 relic("odd_socks", "Odd socks", "common", "variety", 1,
@@ -403,7 +403,7 @@ relic("charm_bracelet", "Charm bracelet", "rare", "variety", 2,
       unlock=("win_with", "mixed_blessing", "Hold a week with Mixed blessing"),
       fn=lambda c, r: c.__setitem__("x", c["x"] * (1 + 0.4 * (c["hold_kinds"] - 1))))
 relic("one_way_ticket", "One-way ticket", "uncommon", "cursed", 2,
-      "x2.5 Amp, but wells you've visited before earn nothing", "Nobody buys these by accident.", cursed=True,
+      "x2.5 Amp, but wells you offered at on an earlier Night earn nothing", "Nobody buys these by accident.", cursed=True,
       unlock=("new_wells_run", 40, "Find 40 new wells in one week"),
       fn=lambda c, r: c.__setitem__("x", c["x"] * (0 if c["revisit"] else 2.5)))
 relic("empty_frame", "Empty frame", "rare", "cursed", 2,
@@ -426,7 +426,7 @@ relic("bus_pass", "Bus pass", "uncommon", "routine", 3,
       fn=lambda c, r: c["revisit"] and r["night"] >= 1 and c["nights_seen"] >= r["night"] + 1
       and c.__setitem__("repeats", c["repeats"] + 1))
 relic("key_ring", "Key ring", "rare", "routine", 2,
-      "At wells you've visited before: x(1 + 0.25 per Night there)", "A key for every door that ever let you in.",
+      "At wells you offered at on an earlier Night: x(1 + 0.25 per Night there)", "A key for every door that ever let you in.",
       unlock=("win_with", "hearthstone", "Hold a week with Hearthstone"),
       fn=lambda c, r: c["revisit"] and c.__setitem__("x", c["x"] * (1 + 0.25 * c["nights_seen"])))
 relic("thermos", "Thermos", "common", "hidden", 0,
@@ -434,7 +434,7 @@ relic("thermos", "Thermos", "common", "hidden", 0,
       unlock=("nights_paid", 5, "Pay 5 Tithes"),
       fn=lambda c, r: (c["e"] == "hush" or c["ghost"]) and c.__setitem__("units", c["units"] + 4))
 relic("locked_diary", "Locked diary", "rare", "hidden", 2,
-      "Gains x0.15 Amp at every Hush well. Never resets.", "The lock is tiny. That's not the point.",
+      "Gains x0.45 Amp at every Hush well. Never resets.", "The lock is tiny. That's not the point.",
       unlock=("win_with", "hush_lantern", "Hold a week with Hush lantern"),
       fn=lambda c, r: c.__setitem__("x", c["x"] * (1 + st(r, "locked_diary"))))
 relic("tote_bag", "Tote bag", "uncommon", "echo", 3,
@@ -465,6 +465,28 @@ relic("film_canister", "Film canister", "uncommon", "smuggling", 2,
       "x2 Amp on Static while Heat is under 1", "Nothing in here, officer. Just film.",
       unlock=("win_with", "static_eater", "Hold a week with Static eater"),
       fn=lambda c, r: (c["e"] == "static" or c["ghost"]) and r["heat"] < 1 and c.__setitem__("x", c["x"] * 2))
+
+# ---- Growing relics: weak the Night you buy them, the reason you live past Night 5 (Nov 2026) ----
+relic("pedometer", "Pedometer", "common", "timing", 1,
+      "Gains +0.9 Amp for every offering you make. Never resets.",
+      "It counts the walk, not the reason.",
+      fn=lambda c, r: c.__setitem__("mult", c["mult"] + st(r, "pedometer")))
+relic("mixtape", "Mixtape", "common", "variety", 1,
+      "Gains +3 Amp whenever you switch energy. Never resets.",
+      "Side A, side B, side A.",
+      fn=lambda c, r: c.__setitem__("mult", c["mult"] + st(r, "mixtape")))
+relic("rain_gauge", "Rain gauge", "common", "machine", 0,
+      "Gains +1.5 Thirst every time you draw. Never resets.",
+      "It fills whether anyone checks it or not.",
+      fn=lambda c, r: c.__setitem__("price", c["price"] + st(r, "rain_gauge")))
+relic("prism_jar", "Prism jar", "uncommon", "variety", 2,
+      "Gains ×0.3 Amp per energy you offer each Night. Never resets.",
+      "Five colors under one lid.",
+      fn=lambda c, r: c.__setitem__("x", c["x"] * (1 + st(r, "prism_jar"))))
+relic("seed_vault", "Seed vault", "uncommon", "money", 2,
+      "Gains ×0.3 Amp per coin of interest you earn. Never resets.",
+      "Nothing grows in there while you keep opening it.",
+      fn=lambda c, r: c.__setitem__("x", c["x"] * (1 + st(r, "seed_vault"))))
 
 # ------------------------------------------------------------------ trinkets (2 slots, money and utility)
 TRINKETS = {
@@ -499,9 +521,9 @@ SPELLS = {
     "veil": ("VEIL", "Static: no Heat and +3 Thirst tonight", "Nobody saw anything.", ("static_sold", 10, "Offer Static 10 times"), 1.0),
     "chalk": ("CHALK", "Carve a random glyph into this well", "Your mark, their wall.", None, 1.0),
     "kindle": ("KINDLE", "Give a random relic a shine", "A little fire in the glass.", ("editions_owned", 1, "Own a relic with a shine"), 0.6),
-    "augur": ("AUGUR", "Clear tonight's Omen", "Read the signs again. Squint.", ("omens_seen", 10, "See 10 Omens"), 0.8),
+    "augur": ("AUGUR", "Clear tonight's Omen and undo what it took. Not a Wardens walk.", "Read the signs again. Squint.", ("omens_seen", 10, "See 10 Omens"), 0.8),
     "recall": ("RECALL", "Get back the last spell you used", "Again, with feeling.", ("spells_cast", 20, "Cast 20 spells"), 0.6),
-    "bargain": ("BARGAIN", "The next stall is half price", "Closing-down sale. Everything must go.", ("broke_shop", 1, "Leave a stall with 0 coin"), 0.6),
+    "bargain": ("BARGAIN", "Relics and wares at the next stall are half price", "Closing-down sale. Everything must go.", ("broke_shop", 1, "Leave a stall with 0 coin"), 0.6),
     "summon": ("SUMMON", "A legendary relic, into a free slot", "Something answers. Be polite.", ("wins", 3, "Hold 3 weeks"), 0.08),
 }
 
@@ -533,7 +555,7 @@ MODS = {
     "true_north": ("True north", "Dowsing finds a well on a third of your visits", "lodestone"),
     "overstock": ("Overstock", "+1 relic at every stall", None),
     "night_market": ("Night market", "+1 spell, glyph or Attunement at every stall", "overstock"),
-    "clearance": ("Clearance", "Everything at the stall costs 1 less", None),
+    "clearance": ("Clearance", "Relics and wares at the stall cost 1 less", None),
     "liquidation": ("Liquidation", "Rerolls cost 2 less", "clearance"),
     "fifth_pocket": ("Fifth pocket", "+1 spell slot", None),
     "sixth_socket": ("Sixth socket", "+1 relic slot", "fifth_pocket"),
@@ -550,7 +572,7 @@ PORTENTS = {
     "windfall": ("Windfall", "+10 coin"),
     "doubled_interest": ("Doubled interest", "Interest pays double tonight"),
     "free_rerolls": ("Free rerolls", "Two free rerolls at the next stall"),
-    "shine": ("Shine", "Your next relic comes with a shine"),
+    "shine": ("Shine", "A relic at the next stall comes with a shine"),
     "tuning": ("Tuning", "+1 Attunement on your focus energy"),
     "scroll": ("Scroll", "A free spell"),
     "chalk_mark": ("Chalk mark", "A free glyph to carve into any well"),
@@ -582,7 +604,7 @@ ECLIPSES = {
 CALLINGS = {
     "wayfarer": ("Wayfarer", "No twist. The Deck as it comes.", None),
     "hedge_witch": ("Hedge witch", "Starts with Static eater and Static-caller. Wardens never appear.", None),
-    "hermit": ("Hermit", "Starts with Hearthstone. Wells you've visited before can be drawn twice a Night.", None),
+    "hermit": ("Hermit", "Starts with Hearthstone. A well you offered at on an earlier Night can be drawn twice.", None),
     "courier": ("Courier", "Units ×1.4 on every draw, but only 10 visits per Night", ("wins", 1, "Hold a week")),
     "diviner": ("Diviner", "Starts with Lodestone and True north. You see each Omen two Nights early.",
                 ("dowses", 30, "Dowse 30 times")),
@@ -608,8 +630,8 @@ CALLINGS = {
 PACTS = [
     ("Chalk", "Nothing added. The Deck as it comes."),
     ("Lead", "The Tithe pays no coin at dawn. Live on trade, favors and spare visits."),
-    ("Iron", "One visit fewer each Night: 11, not 12."),
-    ("Ash", "Every offering lands lighter: Units ×0.9."),
+    ("Iron", "Nights 5, 6 and 7 ask ×1.25, ×1.5, ×1.75. Buy what grows before you need it."),
+    ("Ash", "The same energy twice in a row pays 30% less. Carry more than one."),
     ("Bone", "Relics don't all last: some on the stall are Withered and crumble after 3 Nights."),
     ("Silver", "Rerolls start at 8 coin, and Polish costs twice as much."),
     ("Obsidian", "No Syndicate loan, and candles cost twice as much."),
@@ -624,8 +646,8 @@ CHALLENGES = [
     ("Night owl", "8 visits per Night, but Portents start at 4 visits to spare"),
     ("Glass house", "Start with Glass crown. It can't be sold or swapped out, and Tithes are x2.5."),
     ("Static storm", "Every well is an open network. Heat never cools."),
-    ("The long way", "Wells you've visited before earn nothing"),
-    ("Homebody", "From Night 2, you can only visit wells you've visited before, but they take offerings and refill all Night"),
+    ("The long way", "Wells you offered at on an earlier Night earn nothing"),
+    ("Homebody", "From Night 2, you can only offer where you offered on an earlier Night, but those wells refill all Night"),
     ("Empty pockets", "No stall. Each Night you pay brings a free relic and an Attunement instead."),
     ("Grand tour", "Visit all four kinds of ward each Night, or the Tithe doubles"),
     ("Redline", "Start with Overclock and Witching hour, and 2 extra visits a Night to run them. Tithes ×2.5."),

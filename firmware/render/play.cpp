@@ -102,6 +102,10 @@ static bool visitStar() {
 
 void qa();
 void estimates();
+void stall();
+void dawn();
+void silent();
+void growth();
 
 void run() {
   fakeStreet(6);
@@ -232,9 +236,11 @@ void run() {
   // The drawing ritual, part way and done.
   App::sel = 0;
   frame(key('E'));
-  for (int i = 0; i < 12; i++) frame();
+  for (int i = 0; i < 4; i++) frame();
+  shot("game_drawing_ready", 0.2f);
+  for (int i = 0; i < 8; i++) frame();
   shot("game_drawing", 0.6f);
-  wait(1.0f);
+  wait(1.3f);
   shot("game_drawn");
   wait(1.5f);
   shot("game_visit_after_draw");
@@ -276,6 +282,7 @@ void run() {
     const Game::NightEnd keep = App::game.lastEnd;
     App::game.lastEnd.portents = 2;
     App::game.lastEnd.got[0].portent = Cat::Portent_windfall;
+    App::game.lastEnd.got[0].coin = 10;
     App::game.lastEnd.got[1].portent = Cat::Portent_rare_sight;
     App::modeT += 30;
     shot("game_night_end_portents");
@@ -393,7 +400,7 @@ void run() {
         const float still[3] = {0, 0, 0}, level[3] = {0, 0.6f, 0.8f};
         for (int k = 0; k < 60; k++) motion.update(level, still, 1 / 30.0f);
       }
-      wait(3.0f);   // hold still 1.3 s, then the result shows 1.2 s
+      wait(3.0f);   // settle 0.4 s, hold still 1.3 s, then the result shows 1.2 s
       App::buildActions(ctx());
       for (int i = 0; i < App::nActions; i++) if (App::actions[i].act == App::Act::Sell && App::actions[i].ok) App::sel = i;
       frame(key('E'));
@@ -520,7 +527,11 @@ void run() {
   keys("DE");
   shot("game_build");
   keys("R");
-  shot("game_build_rest");
+  shot("game_build_tonight");
+  keys("R");
+  shot("game_build_wares");
+  keys("R");
+  shot("game_build_you");
   keys("R");
   shot("game_build_week");
   keys("BB");
@@ -685,14 +696,6 @@ void run() {
 
 // The states the QA pass changed, each as a shot: guards, overprints, footers, first-time notes.
 void qa() {
-  // The scanner's footer at every place and log state must fit the screen.
-  for (int p = 0; p < (int)WalkFormat::Place::Count; p++)
-    for (int l = 0; l < 4; l++) {
-      const int w = ScannerScreen::footerWidth((WalkFormat::Place)p, (Status::Log)l, true);
-      const int w2 = ScannerScreen::footerWidth((WalkFormat::Place)p, (Status::Log)l, false);
-      if (w2 > UI::W) printf("SCANNER FOOTER TOO WIDE: place %d log %d: %d px\n", p, l, w2);
-      if (w > UI::W) printf("scanner footer drops G GLASS: place %d log %d (%d px)\n", p, l, w);
-    }
   Game::Run& r = App::game.run;
   // A fresh week on the fake street.
   App::newGame();
@@ -743,7 +746,7 @@ void qa() {
     shot("qa_well_lost");
     w->sig = sig;
   }
-  // The visit: ESC LEAVE in the footer, the toast above it, a favor's first-time note.
+  // The visit: ESC BACK in the footer, the toast above it, a favor's first-time note.
   App::go(App::Mode::Visit);
   App::buildActions(ctx());
   frame();
@@ -831,6 +834,44 @@ void qa() {
   shot("qa_night_end_token");
   App::toastT = 0;
   App::nToastNext = 0;
+  // A free relic with every slot full: the relic, the list to sell from, leaving it.
+  {
+    const Game::NightEnd keepEnd = App::game.lastEnd;
+    const Game::Run keepRun = r;
+    const int fill[] = {Cat::R_ember_caller, Cat::R_tide_caller, Cat::R_gale_caller, Cat::R_porch_light,
+                        Cat::R_rush_hour, Cat::R_hearthstone, Cat::R_mirror_glass};
+    for (int id : fill) if (Game::slotsUsed(r) < Game::relicSlots(r) && !Game::owns(r, id)) Game::addRelic(r, id);
+    r.relics[1].tier = 2;
+    App::game.lastEnd = Game::NightEnd{};
+    App::game.lastEnd.paid = true;
+    App::game.lastEnd.spare = 7;
+    App::game.lastEnd.trade = 9;
+    App::game.lastEnd.portents = 1;
+    App::game.lastEnd.got[0] = Game::PortentResult{Cat::Portent_gift, Cat::R_devils_meter, 0, -1};
+    App::game.moments.portent = Game::PortentChoice{};
+    App::game.moments.lastToken = 0;
+    App::game.moments.swap = Game::GiftSwap{{(uint8_t)(Cat::R_devils_meter + 1), 0, 0}, {-1, -1, -1}, {2, -1, -1}};
+    App::go(App::Mode::NightEnd);
+    App::modeT = 30;
+    frame();
+    shot("qa_gift_room");
+    frame(key('E'));
+    shot("qa_gift_pick");
+    frame(key('B'));
+    frame(key('B'));
+    shot("qa_gift_leave_ask");
+    frame(key('B'));
+    App::toastT = 0;
+    App::nToastNext = 0;
+    App::modeT = 30;
+    frame();
+    shot("qa_gift_left");
+    App::game.lastEnd = keepEnd;
+    r = keepRun;
+    App::game.moments.swap = Game::GiftSwap{};
+    App::giftPicking = false;
+    App::giftAskLeave = false;
+  }
   // Out of visits: the coin in the corner and B.
   r.n.used = r.n.visits;
   r.n.met = 0;
@@ -850,6 +891,23 @@ void qa() {
   App::game.career.nQueue = 21;
   App::go(App::Mode::Reveal);
   shot("qa_reveal", 3);
+  {   // two unlocks with long texts and four new pages: the pages that don't fit are counted
+    Game::Career& car = App::game.career;
+    const auto keepCar = car;
+    const uint16_t keepBefore = App::pagesBefore;
+    car.nRevealed = 2;
+    car.revealed[0] = Game::Career::Pending{(uint8_t)Game::Kind::Relic, 0};
+    car.revealed[1] = Game::Career::Pending{(uint8_t)Game::Kind::Relic, 1};
+    App::pagesBefore = 0;
+    car.pages = 0x0F;
+    App::go(App::Mode::Reveal);
+    App::modeT = 3;   // both unlocks shown
+    shot("qa_reveal_more_pages", 3);
+    car.nQueue = 0;
+    shot("qa_reveal_more_pages_noqueue", 3);
+    car = keepCar;
+    App::pagesBefore = keepBefore;
+  }
   App::game.career.nQueue = 0;
   // Your build: STANDING's labels and a long TONIGHT'S TITHE line.
   r.standing[0] = 12; r.standing[1] = 3; r.standing[2] = -2; r.standing[3] = 0;
@@ -861,14 +919,28 @@ void qa() {
   Game::addRelic(r, Cat::R_blood_moon);
   App::back = App::Mode::Menu;
   App::go(App::Mode::Build);
-  App::tab = 1;
-  const int rows = App::buildRows();
+  App::tab = App::BuildYou;
+  App::sel = 0;
+  int rows = App::buildRows();
   for (int i = 0; i < rows; i++) if (!strcmp(App::restRows[i].title, "STANDING")) App::sel = i;
   shot("qa_build_standing");
+  App::tab = App::BuildTonight;
+  App::sel = 0;
+  rows = App::buildRows();
   for (int i = 0; i < rows; i++) if (!strcmp(App::restRows[i].title, "TONIGHT'S TITHE")) App::sel = i;
   shot("qa_build_tithe_long");
-  App::tab = 2;
+  App::tab = App::BuildWeek;
   shot("qa_build_week_tonight");
+  {   // WARES with one of each kind
+    const Game::Run keep = r;
+    r.trinkets[r.nTrinkets++] = 0;
+    r.spells[r.nSpells++] = Cat::Spell_glamour;
+    r.glyphTokens[r.nGlyphTokens++] = Cat::Glyph_lit;
+    App::tab = App::BuildWares;
+    App::sel = 1;
+    shot("qa_build_wares");
+    r = keep;
+  }
   r.night = 0;
   // Spells: TRANSMUTE's two lines, and the footer with none.
   r.nSpells = 0;
@@ -981,21 +1053,43 @@ void qa() {
   App::toast("A GLYPH DRIFTS BY. PRESS G, HOLD STILL", UI::Text, 2.0f);
   shot("qa_teach_glyph");
   App::toastT = 0;
-  App::toast("OFF FOR 12H 05M", 0, 3.0f);
   App::game.moments.taught = 0;
-  App::noteOff(725);
+  App::noteOff(725, 14);
   shot("qa_off_for");
   App::toastT = 0;
   frame();
   shot("qa_off_for_teach");
   App::toastT = 0;
   App::nToastNext = 0;
+  // The longest of the lines that say what the Deck did on its own.
+  {
+    static const char* const lines[] = {
+      "OLD SAVE SET ASIDE. NEW CAREER", "SAVE DAMAGED: LOADED THE CARD COPY", "LOADED THE CARD COPY: IT WAS NEWER",
+      "THIS SAVE WAS MADE ON ANOTHER DECK", "SAVE FAILED: ONLY THE CARD HAS IT", "CARD BACKUP STOPPED. PRESS R",
+      "COULDN'T TELL HOW LONG IT WAS OFF", "STREETS FULL: CROSS ONE OUT FOR ROOM", "ATLAS FULL: LEAST-VISITED WELLS FADE",
+      "KEPT. THE OLDEST MARK FADED", "YOU ARE A TITHE-KEEPER NOW", "NO WARD LEFT TONIGHT",
+    };
+    static const char* const names[] = {
+      "qa_toast_set_aside", "qa_toast_card_copy", "qa_toast_card_newer", "qa_toast_other_deck", "qa_toast_save_failed",
+      "qa_toast_backup_stopped", "qa_toast_off_unknown", "qa_toast_streets_full", "qa_toast_atlas_full",
+      "qa_toast_mark_faded", "qa_toast_rank", "qa_toast_no_ward",
+    };
+    for (int i = 0; i < 12; i++) {
+      App::toast(lines[i], i < 6 ? UI::Rec : UI::Text, 3.0f);
+      shot(names[i]);
+    }
+    App::toastT = 0;
+  }
   // The glass with a toast: above the footer.
   App::go(App::Mode::Glass);
   App::toast("...nobody Warded sent them...", UI::EnergyColor[(int)Energy::Hush], 3.5f);
   shot("qa_glass_toast", 1.3f);
   App::toastT = 0;
   estimates();
+  stall();
+  dawn();
+  silent();
+  growth();
 }
 
 // A fresh week bound straight from the Bind screen's choices, standing on the
@@ -1108,13 +1202,28 @@ void estimates() {
   App::go(App::Mode::Build);
   keys("R");
   shot("qa_build_omens_ahead");
-  // A quiet Pact: the bar takes the room, no gauge, no notches, no Omen or star at the stall.
+  // A quiet Pact: no gauge, no notches, no Omen or star at the stall.
   bindFresh(Cat::Calling_wayfarer, Game::rules.quietRung);
   visitStar();
   while (App::mode == App::Mode::Show) frame(key('E'));
   App::go(App::Mode::Scanner);
   frame();
   shot("qa_scanner_quiet");
+  {   // the widest Tithe line: a five-digit Tithe still to go, 12 visits, 999 coin
+    const Game::Run keep = r;
+    r.n.tithe = 98765;
+    r.n.total = 0;
+    r.n.used = 0;
+    r.coin = 999;
+    frame();
+    shot("qa_scanner_widest_tithe");
+    st.unsaved = true;   // nothing keeps the game: the footer says so
+    frame();
+    shot("qa_scanner_not_saving");
+    st.unsaved = false;
+    r = keep;
+    frame();
+  }
   if (intoStall()) {
     r.nRelics = 0;
     for (int k = 0; k < Game::relicSlots(r); k++) Game::addRelic(r, Cat::R_crowd_feeder + k);
@@ -1122,6 +1231,845 @@ void estimates() {
     App::sel = 0;
     shot("qa_shop_quiet");
   }
+}
+
+// The stall saying what it does: the shine, rerolls that take something, the
+// header's labels, what can't be bought, sold or polished, and focus-only weeks.
+static void clearToasts() {
+  App::toastT = 0;
+  App::nToastNext = 0;
+}
+static void stallShot(const char* name) {
+  shot(name);
+  clearToasts();
+}
+
+void stall() {
+  Game::Run& r = App::game.run;
+  Game::Shop& s = App::game.shop;
+  bindFresh(Cat::Calling_wayfarer, 0);
+  if (!intoStall()) return;
+  // The shine's relic says whose shine it is (the dawn's own Portents cleared, so only these count).
+  for (int i = 0; i < s.nRelics; i++) { s.relics[i].marks = 0; s.relics[i].half = 0; }
+  s.relics[1].ed = Cat::Edition_prismatic;
+  s.relics[1].marks |= Game::Mark_Shine;
+  s.relics[0].half = 1;
+  App::tab = App::TabRelics;
+  App::sel = 1;
+  App::top = 0;
+  stallShot("stall_shine_details");
+  // R asks first when it would take something away.
+  frame(key('r'));
+  stallShot("stall_reroll_ask_two");
+  App::shopAsk = App::AskNone;
+  s.relics[0].half = 0;
+  s.relics[0].marks = 0;
+  frame(key('r'));
+  stallShot("stall_reroll_ask_shine");
+  frame(key('r'));
+  stallShot("stall_reroll_new_relics");
+  // Free rerolls: the count in the footer, and the leave question.
+  s.freeRerolls = 2;
+  stallShot("stall_free_rerolls_footer");
+  frame(key('B'));
+  stallShot("stall_leave_free_rerolls");
+  App::shopAsk = App::AskNone;
+  s.freeRerolls = 0;
+  // The header with everything on it: MERCY, BARGAIN, a big Tithe, lots of coin,
+  // and a Charm ward that may cancel the Omen (and the Tithe it raises).
+  r.night = 5;
+  r.omens[5] = (uint8_t)(Cat::Omen_blood_price + 1);
+  r.mods |= 1u << Cat::Mod_charm_ward;
+  r.coin = 140;
+  r.bargain = 1;
+  s.mercy = 1;
+  stallShot("stall_header_full");
+  r.bargain = 0;
+  s.mercy = 0;
+  r.coin = 40;
+  stallShot("stall_header_omen_maybe");
+  r.mods &= ~(1u << Cat::Mod_charm_ward);
+  r.night = 1;
+  // Trinket slots full.
+  r.nTrinkets = 0;
+  r.trinkets[r.nTrinkets++] = Cat::Trinket_haggler;
+  r.trinkets[r.nTrinkets++] = Cat::Trinket_pawn_ticket;
+  s.trinket.kind = Game::OfferKind::Trinket;
+  s.trinket.id = Cat::Trinket_lucky_coin;
+  s.trinket.sold = 0;
+  App::tab = App::TabWares;
+  App::sel = s.nCons;
+  frame(key('E'));
+  stallShot("stall_trinket_full");
+  r.nTrinkets = 0;
+  // YOURS: nothing to polish, already at III, Polish lost on a sale, Copycat's target.
+  r.nRelics = 0;
+  Game::addRelic(r, Cat::R_keystone);
+  Game::addRelic(r, Cat::R_seven_league_boots, Cat::Edition_lit);
+  r.relics[1].tier = 3;
+  Game::addRelic(r, Cat::R_copycat_sigil);
+  App::tab = App::TabYours;
+  App::sel = 0;
+  frame(key('E'));
+  stallShot("stall_polish_nothing");
+  App::sel = 1;
+  frame(key('E'));
+  stallShot("stall_polish_max");
+  frame(key('x'));
+  stallShot("stall_sell_polish_lost");
+  App::shopAsk = App::AskNone;
+  App::sel = 2;
+  stallShot("stall_copycat_yours");
+  // Shoestring at the cap: the sale says what it really adds.
+  r.challenge = 0;
+  r.coin = 13;
+  App::sel = 1;
+  frame(key('x'));
+  stallShot("stall_sell_cap_polish");
+  App::shopAsk = App::AskNone;
+  App::sel = 0;
+  frame(key('x'));
+  stallShot("stall_sell_cap");
+  App::shopAsk = App::AskNone;
+  r.challenge = -1;
+  r.coin = 40;
+  // Glass house: the crown isn't for sale.
+  r.challenge = 3;
+  r.nRelics = 0;
+  Game::addRelic(r, Cat::R_glass_crown);
+  Game::addRelic(r, Cat::R_crowd_feeder);
+  App::sel = 0;
+  frame(key('x'));
+  stallShot("stall_crown_cant_sell");
+  // Sell one to buy: the crown and a Phantom dimmed, withering marked, the details in full.
+  Game::addRelic(r, Cat::R_seven_league_boots, Cat::Edition_phantom);
+  Game::addRelic(r, Cat::R_laundromat_token);
+  r.relics[3].withered = 2;
+  Game::addRelic(r, Cat::R_midnight_engine, Cat::Edition_gilt);
+  r.relics[4].tier = 2;
+  for (int k = Game::slotsUsed(r); k < Game::relicSlots(r); k++) Game::addRelic(r, Cat::R_crowd_feeder + 1 + k);
+  App::tab = App::TabRelics;
+  App::sel = 0;
+  s.relics[0].sold = 0;
+  s.relics[0].ed = -1;
+  frame(key('E'));
+  App::sel = 4;
+  stallShot("stall_drop_details");
+  App::sel = 2;
+  frame(key('E'));
+  stallShot("stall_drop_phantom");
+  App::sel = 0;
+  frame(key('E'));
+  stallShot("stall_drop_crown");
+  App::sel = 1;
+  r.coin = 60;
+  frame(key('E'));
+  stallShot("stall_drop_bought");
+  r.challenge = -1;
+  // 8 relics carried: Phantoms count.
+  r.nRelics = 0;
+  for (int i = 0; i < 3; i++) Game::addRelic(r, Cat::R_crowd_feeder + i, Cat::Edition_phantom);
+  for (int i = 0; i < 5; i++) Game::addRelic(r, Cat::R_crowd_feeder + 3 + i);
+  r.mods |= 1u << Cat::Mod_sixth_socket;
+  for (int i = 0; i < s.nRelics; i++) s.relics[i].sold = 0;
+  App::sel = 1;
+  frame(key('E'));
+  stallShot("stall_carry_limit");
+  r.mods &= ~(1u << Cat::Mod_sixth_socket);
+  // Attuner's fork: when it gives two.
+  r.mods |= 1u << Cat::Mod_attuners_fork;
+  App::tab = App::TabWares;
+  for (int tries = 0; tries < 40 && strstr(App::toastText, "TWICE") == nullptr; tries++) {
+    clearToasts();
+    s.cons[0].kind = Game::OfferKind::Attune;
+    s.cons[0].sold = 0;
+    r.coin = 40;
+    App::go(App::Mode::Shop);
+    App::tab = App::TabWares;
+    App::sel = 0;
+    frame(key('E'));
+    frame(key('E'));
+  }
+  shot("stall_attuned_twice");
+  clearToasts();
+  // Rare sight with no rare left to show.
+  Game::stallNotes = Game::Note_NoRare;
+  App::tab = App::TabRelics;
+  App::sel = 0;
+  frame();
+  stallShot("stall_rare_sight_none");
+  // One note: only the Caller, no R, and a mercy that brings only the Attunement.
+  bindFresh(Cat::Calling_wayfarer, 0);
+  r.challenge = 1;
+  if (!intoStall()) return;
+  r.shopFlags |= Game::SF_Mercy;
+  App::openStall();
+  frame();
+  stallShot("stall_one_note_mercy");
+  frame(key('r'));
+  stallShot("stall_one_note_reroll");
+  App::tab = App::TabWares;
+  App::sel = 0;
+  stallShot("stall_one_note_attune");
+  // YOUR BUILD before a stall: the shine, BARGAIN and MERCY say what they really do.
+  bindFresh(Cat::Calling_wayfarer, 0);
+  r.shopFlags |= Game::SF_Shine | Game::SF_Mercy;
+  r.bargain = 1;
+  App::back = App::Mode::Scanner;
+  App::go(App::Mode::Build);
+  App::tab = App::BuildTonight;
+  const int rows = App::buildRows();
+  for (int i = 0; i < rows; i++) if (!strcmp(App::restRows[i].title, "SHINE")) App::sel = i;
+  stallShot("stall_build_shine");
+  for (int i = 0; i < rows; i++) if (!strcmp(App::restRows[i].title, "BARGAIN")) App::sel = i;
+  stallShot("stall_build_bargain");
+}
+
+// One dawn, drawn after its tally and with no first-time note over it.
+static void dawnAt(const Game::NightEnd& e, const char* name) {
+  App::game.lastEnd = e;
+  App::go(App::Mode::NightEnd);
+  App::modeT = 30;
+  frame();
+  App::toastT = 0;
+  App::nToastNext = 0;
+  shot(name);
+}
+
+// The dawn's lines (MERCY and a crumble always have room, every Portent says what it
+// did), its waiting relic and spell, the Night start's notes, and the Lost screen's Tithe.
+void dawn() {
+  Game::Run& r = App::game.run;
+  Game::Moments& m = App::game.moments;
+  bindFresh(Cat::Calling_wayfarer, 0);
+  App::game.phase = Game::Phase::NightEnd;
+  r.night = 2;
+  r.coin = 23;
+  m.portent = Game::PortentChoice{};
+  m.swap = Game::GiftSwap{};
+  m.lastToken = Game::T_Laundromat + 1;
+  m.dawn = Game::DawnNotes{};
+  m.dawn.crumbled = Cat::R_lantern_bearer + 1;
+  m.dawn.nCrumbled = 1;
+  Game::NightEnd e{};
+  e.paid = true;
+  e.spare = 1;
+  e.trade = 6;
+  e.spareCoin = 1;
+  e.reward = 5;
+  e.mercy = true;
+  e.withered = true;
+  e.repaid = true;
+  dawnAt(e, "qa_dawn_mercy_crumble");
+  e.favors = 4;   // a long tally: the token line and the Collector make way
+  e.interest = 2;
+  e.gilt = 2;
+  e.thread = 4;
+  m.dawn.nCrumbled = 2;
+  dawnAt(e, "qa_dawn_mercy_crumble_long");
+  // Three Portents: Doubled interest's long name, a Gift named, a Chalk mark with 4 held.
+  m.dawn = Game::DawnNotes{};
+  e = Game::NightEnd{};
+  e.paid = true;
+  e.spare = 11;
+  e.trade = 9;
+  e.spareCoin = 11;
+  e.reward = 5;
+  e.interest = 4;
+  e.portents = 3;
+  e.got[0] = Game::PortentResult{Cat::Portent_doubled_interest, -1, 2, -1};
+  e.got[1] = Game::PortentResult{Cat::Portent_gift, Cat::R_lantern_bearer, 0, -1};
+  e.got[2] = Game::PortentResult{Cat::Portent_chalk_mark, -1, 0, -2};
+  m.portent.interest = 2;
+  dawnAt(e, "qa_dawn_three_portents");
+  e.interest = 2;
+  e.got[0] = Game::PortentResult{Cat::Portent_windfall, -1, 10, -1};
+  e.got[1] = Game::PortentResult{Cat::Portent_conjunction, Cat::R_midnight_engine, 0, -1};
+  e.got[2] = Game::PortentResult{Cat::Portent_scroll, -1, 0, Cat::Spell_haste};
+  dawnAt(e, "qa_dawn_named");
+  // One of two, with Doubled interest worth nothing on a Night 1 dawn.
+  e = Game::NightEnd{};
+  e.paid = true;
+  e.spare = 6;
+  e.trade = 3;
+  e.spareCoin = 6;
+  e.reward = 5;
+  e.portents = 1;
+  e.got[0] = Game::PortentResult{Cat::Portent_windfall, -1, 0, -1};
+  m.portent = Game::PortentChoice{1, {(uint8_t)(Cat::Portent_doubled_interest + 1), 0, 0}, 0};
+  App::sel = 1;
+  dawnAt(e, "qa_dawn_choice_interest");
+  App::sel = 0;
+  m.portent = Game::PortentChoice{};
+  // Shoestring: 3 coin before the dawn, 28 paid, 15 kept; the Windfall came at the cap.
+  r.challenge = 0;
+  r.coin = 15;
+  m.lastToken = 0;
+  m.dawn.capped = 16;
+  e.spare = 7;
+  e.trade = 6;
+  e.spareCoin = 7;
+  e.got[0] = Game::PortentResult{Cat::Portent_windfall, -1, 0, -1};
+  dawnAt(e, "qa_dawn_shoestring");
+  m.dawn = Game::DawnNotes{};
+  // Empty pockets: the Night's relic with a long name, its Attunement, and ENTER's way on.
+  r.challenge = 7;
+  r.night = 3;
+  e = Game::NightEnd{};
+  e.paid = true;
+  e.spare = 2;
+  e.trade = 7;
+  e.spareCoin = 2;
+  e.reward = 5;
+  e.mercy = true;   // no stall to go easy: no MERCY line
+  e.gift = Cat::R_laundromat_token;
+  m.lastToken = Game::T_Bus + 1;
+  dawnAt(e, "qa_dawn_pockets");
+  {   // a crowded one: three Portents and a long name, so the column cuts names to keep 4 lines
+    Game::NightEnd c = e;
+    c.mercy = false;
+    c.spare = 11;
+    c.spareCoin = 11;
+    c.portents = 3;
+    c.gift = Cat::R_smugglers_lining;
+    c.got[0] = Game::PortentResult{Cat::Portent_doubled_interest, -1, 0, -1};
+    c.got[1] = Game::PortentResult{Cat::Portent_tuning, -1, 0, -1};
+    c.got[2] = Game::PortentResult{Cat::Portent_scroll, -1, 0, Cat::Spell_echo};
+    dawnAt(c, "qa_dawn_pockets_crowded");
+  }
+  {   // every slot full: it waits on the free-relic screen
+    const Game::Run keep = r;
+    const int fill[] = {Cat::R_ember_caller, Cat::R_tide_caller, Cat::R_gale_caller, Cat::R_porch_light,
+                        Cat::R_rush_hour, Cat::R_hearthstone, Cat::R_mirror_glass};
+    for (int id : fill) if (Game::slotsUsed(r) < Game::relicSlots(r) && !Game::owns(r, id)) Game::addRelic(r, id);
+    m.dawn.gift = Cat::R_laundromat_token + 1;
+    m.dawn.giftEd = -1;
+    dawnAt(e, "qa_dawn_pockets_swap");
+    frame(key('B'));
+    frame(key('B'));
+    App::toastT = 0;
+    App::nToastNext = 0;
+    App::modeT = 30;
+    frame();
+    shot("qa_dawn_pockets_left");
+    r = keep;
+    m.dawn = Game::DawnNotes{};
+  }
+  r.challenge = -1;
+  // The seventh dawn: a stall Portent only counts if you go Overnight.
+  r.night = 7;
+  e = Game::NightEnd{};
+  e.paid = true;
+  e.won = true;
+  e.spare = 6;
+  e.trade = 40;
+  e.spareCoin = 6;
+  e.reward = 5;
+  e.interest = 5;
+  e.portents = 1;
+  e.got[0] = Game::PortentResult{Cat::Portent_rare_sight, -1, 0, -1};
+  m.lastToken = Game::T_Ferry + 1;
+  dawnAt(e, "qa_dawn_night7");
+  r.won = 0;
+  r.night = 2;
+  // A Scroll with both spell slots full: the spell, the list to forget from, then the dawn.
+  r.nSpells = 0;
+  r.spells[r.nSpells++] = Cat::Spell_glamour;
+  r.spells[r.nSpells++] = Cat::Spell_hex;
+  e = Game::NightEnd{};
+  e.paid = true;
+  e.spare = 6;
+  e.trade = 8;
+  e.spareCoin = 6;
+  e.reward = 5;
+  e.portents = 1;
+  e.got[0] = Game::PortentResult{Cat::Portent_scroll, -1, 0, Cat::Spell_haste};
+  m.lastToken = 0;
+  m.swap = Game::GiftSwap{{(uint8_t)(Game::SwapSpell | (Cat::Spell_haste + 1)), 0, 0}, {-1, -1, -1}, {-1, -1, -1}};
+  dawnAt(e, "qa_scroll_swap");
+  frame(key('E'));
+  shot("qa_scroll_pick");
+  frame(key('E'));   // forget GLAMOUR
+  shot("qa_scroll_forgotten_toast");
+  App::toastT = 0;
+  App::nToastNext = 0;
+  App::modeT = 30;
+  frame();
+  shot("qa_scroll_taken");
+  m.swap = Game::GiftSwap{};
+  // The Night start: a ward that turned the Omen away, and the crown's refusal.
+  bindFresh(Cat::Calling_wayfarer, 0);
+  r.night = 3;
+  Game::addRelic(r, Cat::R_glass_crown);
+  r.n.omen = -1;
+  r.n.crownBan = Game::Tide;
+  m.dawn.turned = Cat::Omen_tangled + 1;
+  App::go(App::Mode::NightStart);
+  shot("qa_night_start_ward");
+  // The seventh Night, the Eclipse held off.
+  r.night = 6;
+  r.n.eclipse = -1;
+  m.dawn.turned = (uint8_t)((Cat::Eclipse_dim + 1) << 4);
+  shot("qa_night_start_eclipse_ward");
+  m.dawn.turned = 0;
+  // Glitch: tonight's focus and shuffle, under an Omen with two lines of text.
+  bindFresh(Cat::Calling_glitch, 0);
+  r.night = 2;
+  r.n.omen = Cat::Omen_iron_price;
+  r.focus = Game::Gale;
+  r.n.perm[0] = Game::Tide;
+  r.n.perm[1] = Game::Gale;
+  r.n.perm[2] = Game::Ember;
+  App::go(App::Mode::NightStart);
+  shot("qa_night_start_glitch");
+  r.n.omen = -1;
+  r.n.perm[0] = Game::Ember;
+  r.n.perm[1] = Game::Gale;
+  r.n.perm[2] = Game::Tide;
+  shot("qa_night_start_glitch_calm");
+  // Grand tour, lost: the doubled Tithe it really was.
+  r.challenge = 8;
+  r.n.tithe = 2350;
+  r.n.total = 4100;
+  r.n.wardKinds = 3;
+  App::go(App::Mode::Lost);
+  shot("qa_lost_grand_tour");
+  r.challenge = -1;
+  // The Contractor's Night 2: the loan in the Tithe's breakdown.
+  bindFresh(Cat::Calling_contractor, 0);
+  r.night = 1;
+  Game::beginNight(r);
+  App::back = App::Mode::Menu;
+  App::go(App::Mode::Build);
+  App::tab = App::BuildTonight;
+  const int rows = App::buildRows();
+  for (int i = 0; i < rows; i++) if (!strcmp(App::restRows[i].title, "TONIGHT'S TITHE")) App::sel = i;
+  shot("qa_build_contractor");
+}
+
+// ---- What the rules did, said on screen ---------------------------------------
+// A full hold, a relic turning a draw, forced draws, a zero offering's reason,
+// the Wardens listening, the Grand tour, every step of the show, waiting
+// spells, YOUR BUILD's relic lines, and tonight's energy on the scanner.
+
+// The first well in reach (and not the one to skip), or 0.
+static uint32_t wellInReach(uint32_t skip = 0) {
+  static const WellRec* list[Sightings::MaxWells];
+  const int n = sky.listed(list, Sightings::MaxWells);
+  for (int i = 0; i < n; i++)
+    if (sky.inRange(*list[i]) && list[i]->sig >= Game::ReachDbm && list[i]->id != skip) return list[i]->id;
+  return 0;
+}
+
+// Open a visit at a well in reach, with the cursor on the first row of `act` (or energy `e`).
+static void visitAt(uint32_t id, App::Act act, int e = -1) {
+  if (Game::AtlasEntry* a = App::game.atlas.find(id)) a->soldNight = -1;   // settled
+  App::wellId = id;
+  App::echoMode = false;
+  App::go(App::Mode::Visit);
+  App::buildActions(ctx());
+  for (int i = 0; i < App::nActions; i++)
+    if (App::actions[i].act == act && (e < 0 || App::actions[i].arg == e)) { App::sel = i; break; }
+}
+
+// Offer energy `e` at the open well and play the show out. The well is taken
+// as settled, so one well can show several offerings.
+static void offer(int e, float secs = 4) {
+  App::toastT = 0;
+  App::nToastNext = 0;
+  if (Game::AtlasEntry* a = App::game.atlas.find(App::wellId)) a->soldNight = -1;
+  App::buildActions(ctx());
+  for (int i = 0; i < App::nActions; i++)
+    if (App::actions[i].act == App::Act::Sell && App::actions[i].arg == e && !App::actions[i].ok)
+      printf("silent(): offering %d refused: %s\n", e, Game::whyText(App::actions[i].why));
+  App::doSell(ctx(), e);
+  wait(secs);
+}
+
+static void freshNight(int calling, int challenge = -1) {
+  App::newGame();
+  App::game.career.runs = 3;
+  App::bindCalling = calling;
+  App::bindPact = 0;
+  App::bindChallenge = challenge;
+  App::startRun();
+  keys("E");
+  App::go(App::Mode::Scanner);
+  frame();
+  App::toastT = 0;
+  App::nToastNext = 0;
+}
+
+void silent() {
+  Game::Run& r = App::game.run;
+  freshNight(Cat::Calling_hedge_witch);   // starts with Static eater
+  const uint32_t a = wellInReach(), b = wellInReach(a);
+  // The draw row priced at what fits, and the draw that fills the hold.
+  r.hold[Game::Gale] = 5;
+  visitAt(a, App::Act::DrawOwn);
+  shot("silent_visit_hold_room");
+  {   // a draw that a relic turned, a shaky hand, and a full hold, all at once
+    App::lastDraw = Game::Drawn{Game::Why::Ok, Game::Static, 3, 1, 4, Cat::R_static_eater};
+    App::drawDone = true;
+    App::go(App::Mode::Drawing);
+    App::drawDone = true;
+    shot("silent_drawn_turned");
+    App::lastDraw = Game::Drawn{Game::Why::Ok, Game::Hush, 6, 0, 0, Cat::R_hush_lantern};
+    shot("silent_drawn_hush");
+  }
+  r.hold[Game::Gale] = 0;
+
+  // Pilgrim and TRANSMUTE: one draw row, in the energy it gives, with the reason under it.
+  freshNight(Cat::Calling_pilgrim);
+  visitAt(wellInReach(), App::Act::DrawOwn);
+  shot("silent_visit_pilgrim");
+  r.n.transmuteLeft = 3;
+  r.n.transmuteE = Game::Gale;
+  visitAt(wellInReach(), App::Act::DrawOwn);
+  shot("silent_visit_transmute");
+  App::drawDone = false;
+  App::go(App::Mode::Drawing);
+  for (int i = 0; i < 12; i++) frame();
+  shot("silent_drawing_transmute", 0.6f);
+  App::go(App::Mode::Scanner);
+
+  // The long way: an old well's row at ~0 with why, and the show saying why.
+  freshNight(Cat::Calling_wayfarer, 5);
+  {
+    const uint32_t id = wellInReach();
+    r.hold[Game::Tide] = 6;
+    visitAt(id, App::Act::Sell, Game::Tide);
+    offer(Game::Tide);
+    App::go(App::Mode::Scanner);
+    r.night = 1;
+    r.hold[Game::Tide] = 6;
+    visitAt(id, App::Act::Sell, Game::Tide);
+    shot("silent_visit_longway");
+    offer(Game::Tide);
+    shot("silent_show_longway");
+    App::go(App::Mode::Scanner);
+  }
+
+  // Silent bell and Glass crown.
+  freshNight(Cat::Calling_wayfarer);
+  r.n.omen = Cat::Omen_silent_bell;
+  r.hold[Game::Ember] = 6;
+  visitAt(wellInReach(), App::Act::Sell, Game::Ember);
+  shot("silent_visit_silent_bell");
+  offer(Game::Ember);
+  shot("silent_show_silent_bell");
+  App::go(App::Mode::Scanner);
+  r.n.omen = -1;
+  Game::addRelic(r, Cat::R_glass_crown);
+  r.n.crownBan = Game::Tide;
+  r.hold[Game::Tide] = 6;
+  r.n.glamour = 1;
+  visitAt(wellInReach(), App::Act::Sell, Game::Tide);
+  shot("silent_visit_crown");
+  offer(Game::Tide, 3);
+  shot("silent_show_crown");
+  App::afterShow(ctx());
+  frame();
+  shot("silent_glamour_kept");
+  App::go(App::Mode::Scanner);
+  r.nRelics = 0;
+  r.n.glamour = 0;
+
+  // Heat 3 or more: any offering, warned.
+  r.heat = 3.2;
+  r.hold[Game::Ember] = 6;
+  visitAt(wellInReach(), App::Act::Sell, Game::Ember);
+  App::toastT = 0;
+  App::nToastNext = 0;
+  shot("silent_visit_heat");
+  r.heat = 0;
+
+  // Grand tour: what's still to go, and the offering that finishes it.
+  freshNight(Cat::Calling_wayfarer, 8);
+  r.n.wardKinds = 0x5;   // Hollow and Quarter done
+  r.hold[Game::Ember] = 6;
+  visitAt(wellInReach(), App::Act::Sell, Game::Ember);
+  shot("silent_visit_tour");
+  App::back = App::Mode::Scanner;
+  App::go(App::Mode::Build);
+  keys("R");
+  shot("silent_build_tour");
+  r.n.wardKinds = (uint8_t)(0xF & ~(1u << (int)sky.ward()));   // this ward is the last one
+  visitAt(wellInReach(), App::Act::Sell, Game::Ember);
+  offer(Game::Ember);
+  shot("silent_show_tour_done");
+  App::go(App::Mode::Scanner);
+
+  // The show's steps: the ward and Omen on the units, Still water, the Fade, Tangled lines, Copycat, an x0.
+  freshNight(Cat::Calling_wayfarer);
+  r.night = 2;
+  r.n.omen = Cat::Omen_iron_price;
+  Game::addRelic(r, Cat::R_tide_caller);
+  Game::addRelic(r, Cat::R_porch_light);
+  r.hold[Game::Tide] = 7;
+  visitAt(wellInReach(), App::Act::Sell, Game::Tide);
+  offer(Game::Tide);
+  shot("silent_show_still_water");
+  App::go(App::Mode::Scanner);
+  r.n.omen = Cat::Omen_fade;
+  r.n.fadeE = Game::Tide;
+  r.hold[Game::Tide] = 7;
+  App::go(App::Mode::Well);
+  App::wellId = wellInReach(App::wellId);
+  frame();
+  shot("silent_well_fade");
+  visitAt(App::wellId, App::Act::Sell, Game::Tide);
+  offer(Game::Tide);
+  App::showTop = 0;
+  shot("silent_show_fade_top");
+  App::go(App::Mode::Scanner);
+  r.n.omen = Cat::Omen_tangled;
+  r.nRelics = 0;
+  Game::addRelic(r, Cat::R_hushed_step);
+  Game::addRelic(r, Cat::R_crowd_feeder);
+  Game::addRelic(r, Cat::R_overclock);
+  Game::addRelic(r, Cat::R_copycat_sigil);
+  r.hold[Game::Ember] = 6;
+  visitAt(wellInReach(), App::Act::Sell, Game::Ember);
+  offer(Game::Ember);
+  shot("silent_show_tangled_copied");
+  App::showTop = 0;
+  shot("silent_show_tangled_top");
+  App::go(App::Mode::Scanner);
+  r.n.omen = -1;
+  r.nRelics = 0;
+  Game::addRelic(r, Cat::R_glass_crown);
+  Game::addRelic(r, Cat::R_overclock);
+  Game::addRelic(r, Cat::R_hungry_coin);
+  r.n.crownBan = Game::Gale;
+  r.hold[Game::Gale] = 6;
+  visitAt(wellInReach(), App::Act::Sell, Game::Gale);
+  offer(Game::Gale);
+  shot("silent_show_stays_zero");
+  App::go(App::Mode::Scanner);
+  r.nRelics = 0;
+  Game::addRelic(r, Cat::R_hungry_coin);
+  r.hold[Game::Ember] = 2;
+  visitAt(wellInReach(), App::Act::Sell, Game::Ember);
+  offer(Game::Ember);
+  shot("silent_show_hungry_coin");
+  App::go(App::Mode::Scanner);
+
+  // A favor finished by this offering: its coin and standing on the show, the offering's own coin in the footer.
+  r.nRelics = 0;
+  {
+    const uint32_t id = wellInReach();
+    const WellRec* w = sky.byId(id);
+    r.jobs[0] = Game::Job{Game::Jobs::Wander, (uint8_t)Game::wellFaction(r, App::viewOf(*w, sky, st.nowMs)), 0, 1, 0, 5, 0, 0};
+    r.hold[Game::Ember] = 5;
+    visitAt(id, App::Act::Sell, Game::Ember);
+    offer(Game::Ember);
+    shot("silent_show_favor_done");
+    App::go(App::Mode::Scanner);
+  }
+
+  // Spells: what's waiting, a second GLAMOUR refused, KINDLE and RECALL saying what they did, CHALK asking.
+  r.nSpells = 0;
+  r.spells[r.nSpells++] = Cat::Spell_glamour;
+  r.spells[r.nSpells++] = Cat::Spell_kindle;
+  r.n.glamour = 1;
+  App::back = App::Mode::Scanner;
+  App::go(App::Mode::Spells);
+  frame(key('E'));
+  shot("silent_spells_ready");
+  App::toastT = 0;
+  Game::addRelic(r, Cat::R_porch_light);
+  keys("D");
+  frame(key('E'));
+  shot("silent_toast_kindle");
+  App::toastT = 0;
+  r.nSpells = 0;
+  r.spells[r.nSpells++] = Cat::Spell_recall;
+  r.lastSpell = Cat::Spell_haste;
+  App::go(App::Mode::Spells);
+  frame(key('E'));
+  shot("silent_toast_recall");
+  App::toastT = 0;
+  r.nSpells = 0;
+  r.spells[r.nSpells++] = Cat::Spell_augur;
+  r.n.omen = -1;
+  App::go(App::Mode::Spells);
+  frame(key('E'));
+  shot("silent_toast_no_omen");
+  App::toastT = 0;
+  r.n.omen = Cat::Omen_short_night;
+  App::go(App::Mode::Spells);
+  frame(key('E'));
+  shot("silent_toast_augur");
+  App::toastT = 0;
+  r.nSpells = 0;
+  r.spells[r.nSpells++] = Cat::Spell_chalk;
+  {
+    App::wellId = wellInReach();
+    const WellRec* w = sky.byId(App::wellId);
+    Game::AtlasEntry& e = App::game.atlas.touch(w->id, w->seed, r.runNo, 0);
+    e.glyph = Cat::Glyph_echoing;
+    App::back = App::Mode::Visit;
+    App::go(App::Mode::Spells);
+    frame(key('E'));
+    shot("silent_chalk_ask");
+    App::toastT = 0;
+    e.glyph = -1;
+  }
+
+  // YOUR BUILD's relics: the Sleeper's halved Polish, what Copycat copies, growth as x and +, a withering.
+  r.nRelics = 0;
+  Game::addRelic(r, Cat::R_porch_light);
+  r.relics[0].tier = 3;
+  Game::addRelic(r, Cat::R_copycat_sigil);
+  Game::addRelic(r, Cat::R_black_ledger);
+  r.state[Cat::R_black_ledger] = 1.2;
+  Game::addRelic(r, Cat::R_patience, -1, 2);
+  r.state[Cat::R_patience] = 140;
+  Game::addRelic(r, Cat::R_hush_lantern);
+  r.n.noPolish = 1;
+  App::back = App::Mode::Scanner;
+  App::go(App::Mode::Build);
+  shot("silent_build_relics");
+  App::sel = 0;
+  shot("silent_build_sleeper");
+  App::sel = 1;
+  shot("silent_build_copycat");
+  r.n.noPolish = 0;
+  keys("R");
+  for (int i = 0; i < 30; i++) keys("D");
+  keys("UU");
+  shot("silent_build_heat");
+
+  // Tonight's energy on the scanner, the glass and a well's page (a Static storm).
+  freshNight(Cat::Calling_wayfarer, 4);
+  App::go(App::Mode::Scanner);
+  frame();
+  shot("silent_scanner_storm");
+  App::wellId = wellInReach();
+  App::go(App::Mode::Well);
+  frame();
+  shot("silent_well_storm");
+  App::go(App::Mode::Glass);
+  frame();
+  shot("silent_glass_storm", 1.3f);
+  App::go(App::Mode::Scanner);
+  // The hold's leak.
+  r.hold[Game::Ember] = 4;
+  frame();
+  App::toastT = 0;
+  App::nToastNext = 0;
+  App::game.playMs = r.holdLeakMs + 15 * 60000;
+  frame();
+  shot("silent_toast_leak");
+  App::toastT = 0;
+
+  // ECHO: the picker priced the way the offering will be, and the visit through it.
+  freshNight(Cat::Calling_wayfarer);
+  for (int k = 0; k < 2; k++) {
+    r.hold[Game::Tide] = 5;
+    visitAt(wellInReach(k ? wellInReach() : 0), App::Act::Sell, Game::Tide);
+    offer(Game::Tide);
+    App::go(App::Mode::Scanner);
+  }
+  for (int i = 0; i < App::game.atlas.count; i++) App::game.atlas.e[i].soldNight = -1;   // settled
+  r.hold[Game::Tide] = 6;
+  r.n.echo = 1;
+  App::back = App::Mode::Visit;
+  App::echoFrom = 0;
+  App::go(App::Mode::Atlas);
+  frame();
+  shot("silent_atlas_echo");
+  frame(key('E'));
+  shot("silent_visit_echo");
+  App::echoMode = false;
+  r.n.echo = 0;
+  App::go(App::Mode::Scanner);
+
+  // Out of visits: RECALL on the HASTE row, and no loans Overnight.
+  freshNight(Cat::Calling_wayfarer);
+  r.nSpells = 0;
+  r.spells[r.nSpells++] = Cat::Spell_recall;
+  r.lastSpell = Cat::Spell_haste;
+  r.n.used = r.n.visits;
+  r.n.total = r.n.tithe * 0.4;
+  App::go(App::Mode::OutOfVisits);
+  App::sel = 2;
+  shot("silent_out_recall");
+  r.night = 8;
+  App::sel = 1;
+  shot("silent_out_overnight_loan");
+  App::go(App::Mode::Scanner);
+}
+
+// Growing relics, Iron and Ash (Nov 2026): the Pacts' texts, Ash's warning and step, a shelf of
+// growing relics and how far each has come in YOUR BUILD.
+void growth() {
+  Game::Run& r = App::game.run;
+  App::newGame();
+  App::game.career.seals[Cat::Calling_wayfarer] = 6;
+  App::bindCalling = Cat::Calling_wayfarer;
+  App::go(App::Mode::Bind);
+  App::sel = 1;
+  App::bindPact = 2;
+  frame();
+  shot("growth_bind_iron");
+  App::bindPact = 3;
+  frame();
+  shot("growth_bind_ash");
+
+  // Ash: Tide twice in a row.
+  freshNight(Cat::Calling_wayfarer);
+  r.pact = 3;
+  const uint32_t a = wellInReach(), b = wellInReach(a);
+  r.hold[Game::Tide] = 6;
+  visitAt(a, App::Act::Sell, Game::Tide);
+  offer(Game::Tide);
+  App::go(App::Mode::Scanner);
+  r.hold[Game::Tide] = 6;
+  r.hold[Game::Ember] = 4;
+  visitAt(b, App::Act::Sell, Game::Tide);
+  App::toastT = 0;
+  App::nToastNext = 0;
+  shot("growth_visit_ash");
+  offer(Game::Tide);
+  shot("growth_show_ash");
+  App::go(App::Mode::Scanner);
+
+  // A shelf of growing relics, and one's details.
+  bindFresh(Cat::Calling_wayfarer, 0);
+  if (intoStall()) {
+    Game::Shop& s = App::game.shop;
+    const int ids[] = {Cat::R_pedometer, Cat::R_mixtape, Cat::R_rain_gauge, Cat::R_prism_jar};
+    for (int k = 0; k < 4 && k < s.nRelics; k++) { s.relics[k].id = (uint8_t)ids[k]; s.relics[k].ed = -1; s.relics[k].marks = 0; s.relics[k].half = 0; s.relics[k].withered = -1; }
+    App::tab = App::TabRelics;
+    App::top = 0;
+    App::sel = 1;
+    Game::starBest(s, r, App::game.recent);   // a growing relic adds nothing yet, so no star
+    stallShot("growth_stall_mixtape");
+    App::sel = 3;
+    stallShot("growth_stall_prism_jar");
+    const int held[] = {Cat::R_pedometer, Cat::R_mixtape, Cat::R_prism_jar};
+    const double grown[] = {7.2, 15, 1.2};
+    for (int k = 0; k < 3; k++) { Game::addRelic(r, held[k]); r.state[held[k]] = grown[k]; }
+    r.relics[r.nRelics - 1].tier = 1;
+    App::tab = App::TabYours;
+    App::sel = 0;
+    stallShot("growth_stall_yours");
+    App::go(App::Mode::Scanner);
+  }
+
+  // YOUR BUILD: how far each has come.
+  freshNight(Cat::Calling_wayfarer);
+  const int held[] = {Cat::R_pedometer, Cat::R_mixtape, Cat::R_rain_gauge, Cat::R_prism_jar, Cat::R_seed_vault};
+  const double grown[] = {12.6, 21, 9, 1.5, 2.1};
+  for (int k = 0; k < 5; k++) { Game::addRelic(r, held[k]); r.state[held[k]] = grown[k]; }
+  App::back = App::Mode::Scanner;
+  App::go(App::Mode::Build);
+  App::tab = 0;
+  App::sel = 3;
+  frame();
+  shot("growth_build");
 }
 
 } // namespace Play

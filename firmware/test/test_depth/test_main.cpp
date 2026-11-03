@@ -34,7 +34,7 @@ static void check(bool ok, const char* what) {
 enum Pick : uint8_t { PickStar, PickNearest, PickOwnBack };
 enum ShopStyle : uint8_t { ShopStar, ShopFirstAffordable, ShopRaresOnly, ShopUncommonUp, ShopSpendAll, ShopRerollHappy, ShopInterest25, ShopMultFirst, ShopAddsFirst };
 enum Loan : uint8_t { LoanLastResort, LoanNever, LoanEarly };
-enum EnergyUse : uint8_t { EnergyAny, EnergyFocusOnly, EnergySpread };
+enum EnergyUse : uint8_t { EnergyAny, EnergyFocusOnly, EnergySpread, EnergyRotate };
 enum Wards : uint8_t { WardsAnywhere, WardsNexus, WardsHollow, WardsAdaptive };
 enum SpellUse : uint8_t { SpellsPanic, SpellsNone, SpellsSmart };
 
@@ -52,6 +52,7 @@ struct Policy {
   bool glyphs = false;      // buy glyph tokens and carve them into routine wells
   bool candles = true;
   bool attuneSpread = false;   // attune the energy you've been offering with the lowest level, not always your focus
+  bool lookahead = false;      // value a growing relic for what it will become by Night 7, not what it adds today
 };
 static Policy P;
 
@@ -114,6 +115,7 @@ static double estimate(const WellView& w, const Here& h, int e) {
   return score(c, r).resonance;
 }
 
+static long growerRuns = 0, growerSeen = 0, shownAll = 0, shownMult = 0;   // runs holding a growing relic by Night 3; growing relics shown on early shelves
 struct Tally {
   long sales, nights, candles, loans, favorsTaken, favorsDone, glyphsCarved, glamours, detours, choices, attunes;
   double trade, spare, jobCoin, candleCoin, attuneCoin;
@@ -199,7 +201,13 @@ static Choice lookAt(const Place& p) {
           if (P.energy == EnergyFocusOnly && pass == 0 && e != r.focus) continue;
           if (P.pick == PickOwnBack && canD && e != drawnE) continue;   // give the well back what it gave
           if (e == r.focus) anyFocusSale = true;
-          const double v = estimate(w, c.h, e);
+          double v = estimate(w, c.h, e);
+          // Rotate: carry a second energy. A draw that adds a kind you don't hold, or a sale of
+          // an energy other than the last one, is worth a little more than it pays right now.
+          if (P.energy == EnergyRotate) {
+            if (canD && drawnE >= 0 && saved[drawnE] == 0) v *= 1.15;
+            if (e != r.lastE) v *= 1.1;
+          }
           if (v > c.v) { c.v = v; c.w = w; c.e = e; c.i = i; c.draw = canD; c.focus = f == 1; c.any = true; }
         }
         memcpy(r.hold, saved, sizeof(saved));
@@ -311,9 +319,53 @@ static void buyWares(double reserve) {
   }
 }
 
+// What a growing relic gains per Night, for the expert's lookahead (balance_sim.py GROWTH).
+static double growthPerNight(int id) {
+  switch (id) {
+    case R_tally_stick: return 3.0;
+    case R_ritual_candle: return 0.45;
+    case R_patience: return 18.0;
+    case R_pilgrims_staff: return 0.6;
+    case R_black_ledger: return 0.6;
+    case R_picket_fence: return 2.25;
+    case R_piggy_bank: return 3.0;
+    case R_locked_diary: return 0.45;
+    case R_pedometer: return 4.5;
+    case R_mixtape: return 7.5;
+    case R_rain_gauge: return 6.0;
+    case R_prism_jar: return 0.75;
+    case R_seed_vault: return 1.2;
+    default: return 0;
+  }
+}
+
+// The shelf relic worth most with the lookahead: a growing relic counts half the
+// growth it has left this week. -1 if nothing beats 5%.
+static int lookaheadPick() {
+  const int drop = slotsUsed(r) >= relicSlots(r) ? weakestRelic(r, mem) : -1;
+  const double base = buildValue(r, mem);
+  double bestG = 0.05;
+  int bestK = -1;
+  for (int k = 0; k < shop.nRelics; k++) {
+    const Offer& o = shop.relics[k];
+    if (o.sold || r.coin < cost(r, o)) continue;
+    Run& t = scratchRun();
+    t = r;
+    if (drop >= 0 && o.ed != Edition_phantom) removeRelicAt(t, drop);
+    addRelic(t, o.id, o.ed);
+    const int left = Nights - 1 - r.night;
+    if (left > 0) t.state[o.id] += growthPerNight(o.id) * rules.growth * left / 2;
+    const double g = buildValue(t, mem) / (base > 1 ? base : 1) - 1;
+    if (g > bestG) { bestG = g; bestK = k; }
+  }
+  return bestK;
+}
+
 static void playShop() {
   openShop(shop, r, car);
   if (!shop.open) return;
+  if (r.night <= 3) for (int k = 0; k < shop.nRelics; k++) growerSeen += growthPerNight(shop.relics[k].id) > 0;
+  for (int k = 0; k < shop.nRelics; k++) { shownAll++; shownMult += Relics[shop.relics[k].id].phase == 2 || Relics[shop.relics[k].id].phase == 3; }
   const int night = r.night;   // the Night about to start (1-based count of shops so far)
   switch (P.shop) {
     case ShopFirstAffordable: {
@@ -375,6 +427,7 @@ static void playShop() {
         for (int buys = 0; buys < 4; buys++) {
           starBest(shop, r, mem);
           int pickK = shop.star;
+          if (P.lookahead && !(shop.night == 0 && pickK >= 0)) pickK = lookaheadPick();
           if (P.shop == ShopMultFirst || P.shop == ShopAddsFirst) {
             // Mio's rule: after the Caller, buy anything that multiplies (or, for the novice mirror, anything that adds).
             const bool wantMult = P.shop == ShopMultFirst;
@@ -438,13 +491,17 @@ static Outcome playRun(uint32_t seed, int calling, int pact) {
     (void)loaned;
     if (!r.n.met) { o.failNight = r.night + 1; break; }
     PortentChoice ch;
-    NightEnd e = endNight(r, car, 70, &ch);
+    GiftSwap sw{};
+    DawnNotes dn{};
+    NightEnd e = endNight(r, car, 70, &ch, &sw, &dn);
     for (int k = 0; k < e.portents; k++) {   // one of two: keep the one worth more to this build
       if (!((ch.pending >> k) & 1)) continue;
       const int a = e.got[k].portent, b = ch.alt[k] - 1;
-      choosePortent(r, car, e, ch, k, portentValue(b, ch) > portentValue(a, ch));
+      choosePortent(r, car, e, ch, k, portentValue(b, ch) > portentValue(a, ch), &sw, &dn);
       tally.choices++;
     }
+    for (int k = 0; k < 3; k++) if (giftWaiting(sw) == k) takeGift(r, sw, k, weakestRelic(r, mem));   // a free relic: sell the weakest for it
+    if (dn.gift) takeNightRelic(r, dn, weakestRelic(r, mem));   // a waiting spell is left, as the simulator gives none
     if (r.night <= Nights) { tally.nights++; tally.trade += e.trade; tally.spare += e.spareCoin; }
     check(r.coin >= 0, "negative coin");
     check(slotsUsed(r) <= relicSlots(r), "too many relics");
@@ -452,6 +509,11 @@ static Outcome playRun(uint32_t seed, int calling, int pact) {
     if (e.won) { o.won = true; o.coinAtWin = r.coin; o.relics = r.nRelics; o.bought = (int)r.stats[(int)Stat::bought_total]; o.attunes = (int)r.stats[(int)Stat::attunes_run]; }
     if (r.night > Nights) o.overnight = r.night - Nights;
     playShop();
+    if (r.night == 3) {
+      bool g = false;
+      for (int i = 0; i < r.nRelics; i++) g = g || growthPerNight(r.relics[i].id) > 0;
+      growerRuns += g;
+    }
     check(slotsUsed(r) <= relicSlots(r), "too many relics after shop");
   }
   if (!o.won) { o.relics = r.nRelics; o.bought = (int)r.stats[(int)Stat::bought_total]; o.attunes = (int)r.stats[(int)Stat::attunes_run]; }
@@ -467,6 +529,7 @@ static int modalFail(const CellResult& c) { int m = 1; for (int n = 2; n <= Nigh
 static CellResult runCell(const Policy& pol, int pact, int runs, bool everything) {
   P = pol;
   memset(&tally, 0, sizeof(tally));
+  growerRuns = growerSeen = shownAll = shownMult = 0;
   int wins = 0, fails[Nights + 1] = {0};
   static int depths[20000];
   int nd = 0;
@@ -499,12 +562,13 @@ static CellResult runCell(const Policy& pol, int pact, int runs, bool everything
   c.favorCoinPerNight = tally.jobCoin / N;
   c.attunes = attunes / runs;
   c.choices = (double)tally.choices / runs;
+  if (getenv("GROWERS")) fprintf(stderr, "[%s pact %d: %.0f%% hold a grower by Night 3; %.2f growers shown per run on stalls 1-3; %.0f%% of shelf relics multiply]\n", pol.name, pact, 100.0 * growerRuns / runs, (double)growerSeen / runs, shownAll ? 100.0 * shownMult / shownAll : 0.0);
   return c;
 }
 
 // ---- The policies ---------------------------------------------------------------------
 
-static Policy policies[32];
+static Policy policies[48];
 static int nPolicies = 0;
 static Policy& add(const char* name) { policies[nPolicies] = Policy{}; policies[nPolicies].name = name; return policies[nPolicies++]; }
 
@@ -538,6 +602,13 @@ static void definePolicies() {
   { Policy& p = add("walk to where it pays"); p.wards = WardsAdaptive; }
   { Policy& p = add("attune spread"); p.attuneSpread = true; }
   { Policy& p = add("planner, attune spread"); p.favors = true; p.spells = SpellsSmart; p.wards = WardsAdaptive; p.glyphs = true; p.attuneSpread = true; }
+  // The relic-and-coin expert: no detours, no favors, no luck of the street; only what it buys and when.
+  { Policy& p = add("growers early"); p.lookahead = true; }
+  { Policy& p = add("growers + reroll"); p.lookahead = true; p.shop = ShopRerollHappy; }
+  { Policy& p = add("growers + reroll + spells"); p.lookahead = true; p.shop = ShopRerollHappy; p.spells = SpellsSmart; p.attuneSpread = true; }
+  { Policy& p = add("rotate energies"); p.energy = EnergyRotate; }
+  { Policy& p = add("growers + rotate"); p.lookahead = true; p.energy = EnergyRotate; }
+  { Policy& p = add("growers + rotate + reroll"); p.lookahead = true; p.energy = EnergyRotate; p.shop = ShopRerollHappy; p.attuneSpread = true; }
 }
 
 // ---- Rule sets to measure ----------------------------------------------------------------
@@ -574,6 +645,15 @@ static void defineScenarios() {
   // Other places for the Lead rung.
   { Rules& x = scenario("iron 1, lead 2"); x.rung[PR_iron] = 1; x.rung[PR_lead] = 2; }
   { Rules& x = scenario("iron 1 ash 2 bone 3, lead 4"); x.rung[PR_iron] = 1; x.rung[PR_ash] = 2; x.rung[PR_bone] = 3; x.rung[PR_lead] = 4; }
+  // The shelf and growing relics as they were before Nov 2026 (Iron and Ash stay the new ones):
+  // a multiplier on every shelf, no pull toward growing relics, a third of today's growth.
+  { Rules& x = scenario("old shelf and growth"); x.multSlot = true; x.multKeep = 1.0; x.growerPull = 0.0; x.growth = 1.0 / 3; }
+  { Rules& x = scenario("no grower pull"); x.growerPull = 0.0; }
+  { Rules& x = scenario("growth x2/3"); x.growth = 2.0 / 3; }
+  { Rules& x = scenario("ash tire 0.6"); x.tire = 0.6; }
+  { Rules& x = scenario("overnight accel 0.5"); x.overnightAccel = 0.5; }
+  { Rules& x = scenario("overnight accel 1.0"); x.overnightAccel = 1.0; }
+  { Rules& x = scenario("iron steep 1.1/1.25/1.6"); x.steep[0] = 1.1; x.steep[1] = 1.25; x.steep[2] = 1.6; }
 }
 
 // One table: every chosen policy on every Pact under one rule set.
@@ -633,14 +713,14 @@ int main(int argc, char** argv) {
   // The policies that tell the story; -P adds one by name, -A plays them all.
   static const char* const story[] = {"baseline (star, no favors)", "planner", "take favors", "focus only",
                                       "spread (never draw focus)", "never attune", "attune spread", "planner, attune spread"};
-  int which[32], nWhich = 0;
+  int which[48], nWhich = 0;
   for (const char* nm : story) which[nWhich++] = policyIndex(nm);
   bool any = false;
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "-r") && i + 1 < argc) { runs = atoi(argv[++i]); continue; }
     if (!strcmp(argv[i], "-a")) { everything = true; continue; }
     if (!strcmp(argv[i], "-A")) { nWhich = 0; for (int k = 0; k < nPolicies; k++) which[nWhich++] = k; continue; }
-    if (!strcmp(argv[i], "-P") && i + 1 < argc) { const int k = policyIndex(argv[++i]); if (k >= 0 && nWhich < 32) which[nWhich++] = k; continue; }
+    if (!strcmp(argv[i], "-P") && i + 1 < argc) { const int k = policyIndex(argv[++i]); if (k >= 0 && nWhich < 48) which[nWhich++] = k; continue; }
     if (!strcmp(argv[i], "-l")) { for (int k = 0; k < nScenarios; k++) printf("%s\n", scenarios[k].name); for (int k = 0; k < nPolicies; k++) printf("  policy: %s\n", policies[k].name); return 0; }
     // A scenario, by the start of its name.
     bool found = false;

@@ -33,7 +33,11 @@ inline Game::WellView currentView(const Ctx& c) {
     if (a) return viewOf(*a);
   }
   const WellRec* w = openWell(c);
-  if (w) return viewOf(*w, c.sky, c.st.nowMs);
+  if (w) {
+    Game::WellView v = viewOf(*w, c.sky, c.st.nowMs);
+    holdReach(v, *w, c.sky);
+    return v;
+  }
   Game::WellView v{};
   v.id = wellId;
   v.sig = -120;
@@ -51,8 +55,12 @@ inline void buildActions(const Ctx& c) {
   };
   if (!echoMode) {
     const Why dw = canDraw(r, game.atlas, w);
-    add(Act::DrawOwn, wellEnergy(r, w), dw, drawUnits(r, w));
-    if (givesFocus(r, w) && r.focus != wellEnergy(r, w)) add(Act::DrawFocus, r.focus, dw, drawUnits(r, w));
+    const int forced = forcedDraw(r);   // Pilgrim, One note, TRANSMUTE: every draw is one energy
+    if (forced >= 0) add(Act::DrawOwn, forced, dw, drawFits(r, w));
+    else {
+      add(Act::DrawOwn, wellEnergy(r, w), dw, drawFits(r, w));
+      if (givesFocus(r, w) && r.focus != wellEnergy(r, w)) add(Act::DrawFocus, r.focus, dw, drawFits(r, w));
+    }
   }
   for (int e = 0; e < EnergyN; e++) {
     if (!r.hold[e]) continue;
@@ -78,6 +86,40 @@ inline const char* whyLine(const Action& a, char* b, int cap) {
   if (left > 0) { snprintf(b, cap, "SETTLING: BACK IN %d MIN", left); return b; }
   if (a.why == Why::Dry && here && here->drawnNight >= 2000) return "OFFER HERE TO DRAW AGAIN";
   return whyText(a.why);
+}
+
+// Why an offering here would make nothing: the same words on the visit line and the show.
+inline const char* zeroText(Game::Zero z, char* b, int cap) {
+  switch (z) {
+    case Game::Zero::SilentBell: return "SILENT BELL: FIRST 2 MAKE NOTHING";
+    case Game::Zero::LongWay: return "THE LONG WAY: OLD WELLS EARN NOTHING";
+    case Game::Zero::Crown: snprintf(b, cap, "THE CROWN REFUSES %s TONIGHT", energyWord(run().n.crownBan)); return b;
+    default: return nullptr;
+  }
+}
+
+// Grand tour: the wards still to offer in tonight, while the Tithe is doubled. Null once done.
+inline const char* tourLine(char* b, int cap) {
+  const Game::Run& r = run();
+  if (r.challenge != 8 || r.n.wardKinds == 0xF) return nullptr;
+  int missing = 0;
+  for (int k = 0; k < 4; k++) missing += !((r.n.wardKinds >> k) & 1);
+  if (missing >= 3) { snprintf(b, cap, missing == 4 ? "GRAND TOUR: ALL 4 WARDS TO GO" : "GRAND TOUR: 3 WARDS TO GO"); return b; }
+  int k = snprintf(b, cap, "GRAND TOUR:");
+  for (int w = 0, n = 0; w < 4; w++)
+    if (!((r.n.wardKinds >> w) & 1)) k += snprintf(b + k, cap - k, "%s %s", n++ ? "," : "", wardName((WardKind)w));
+  snprintf(b + k, cap - k, " TO GO");
+  return b;
+}
+
+// Why every draw comes out as one energy, for the line under the draw row.
+inline const char* forcedLine(char* b, int cap) {
+  const Game::Run& r = run();
+  const int e = Game::forcedDraw(r);
+  if (e < 0) return nullptr;
+  if (r.n.transmuteLeft > 0) snprintf(b, cap, "TRANSMUTE: DRAWS COME AS %s (%d)", energyWord(e), r.n.transmuteLeft);
+  else snprintf(b, cap, "%s: EVERY WELL GIVES %s", r.challenge == 1 ? "ONE NOTE" : "PILGRIM", energyWord(e));
+  return b;
 }
 
 inline void actionLabel(const Action& a, char* b, int cap) {
@@ -122,12 +164,23 @@ inline float cupSlope(const Ctx& c) {
   return s > 0.6f ? 0.6f : s < -0.6f ? -0.6f : s;
 }
 
-inline void stepCup(const Ctx& c, float dt) {
+// Whether holding like this would cost a unit of this draw: the same sum the
+// draw itself makes (Game::draw), on the steadiness right now. The drops and
+// IT'S SPILLING follow it, so they show exactly when something would be lost.
+inline bool spillingNow(const Ctx& c) {
+  if (!c.gyro) return false;
+  const Game::WellView w = currentView(c);
+  const double units = Game::drawUnits(run(), w);
+  const long fits = Game::drawFits(run(), w), got = lround(units * (0.75 + 0.25 * c.motion.steadiness));
+  return fits - (got < fits ? got : fits) >= 1;   // a unit that wouldn't fit in the hold isn't spilled
+}
+
+inline void stepCup(const Ctx& c, float dt, bool spilling = true) {
   const float shake = c.gyro ? 1 - c.motion.steadiness : 0;
   slosh += (shake * 7 - slosh) * (dt * 4 > 1 ? 1 : dt * 4);
   sloshPhase += dt * (5 + shake * 12);
-  // Spilling runs with unsteadiness, like the spill itself (up to a quarter of the draw).
-  spillDue += dt * (shake > 0.15f ? (shake - 0.15f) * 14 : 0);
+  // Drops fall only when it would cost something, faster the shakier you are.
+  spillDue += spilling ? dt * shake * 10 : 0;
   const float slope = cupSlope(c);
   while (spillDue >= 1) {
     spillDue -= 1;
@@ -190,6 +243,11 @@ inline int steadyN = 0;
 inline Game::Drawn lastDraw{};
 inline bool drawDone = false;
 constexpr float DrawHold = 1.3f;   // seconds to hold still (gyro); shorter without one
+// A moment to settle after pressing the key, while a ring closes round the
+// energy's mark. Steadiness only counts once it's closed (gyro only).
+constexpr float DrawReady = 0.4f;
+inline float drawReady(const Ctx& c) { return c.gyro ? DrawReady : 0; }
+inline float drawHold(const Ctx& c) { return c.gyro ? DrawHold : 0.5f; }
 
 // ---- The sale show ---------------------------------------------------------------
 
@@ -208,6 +266,14 @@ inline float stepTime() {
 
 inline const char* sourceName(uint8_t src, int ed, char* b, int cap) {
   if (src == Game::Trace::FromAttune) { snprintf(b, cap, "ATTUNED"); return b; }   // the base every multiplier multiplies
+  if (src == Game::Trace::FromVeil) { snprintf(b, cap, "VEIL"); return b; }
+  if (src == Game::Trace::FromPact) { snprintf(b, cap, "ASH: SAME ENERGY"); return b; }   // the same energy twice in a row
+  if (src == Game::Trace::FromWard) { snprintf(b, cap, "%s", wardName((WardKind)(lastTrace.ward & 3))); return b; }
+  if (src == Game::Trace::FromOmen) {   // tonight's Omen: LOW TIDE, THE FADE, STILL WATER
+    if (run().n.omen >= 0) upper(Cat::Omens[run().n.omen].name, b, cap);
+    else snprintf(b, cap, "OMEN");
+    return b;
+  }
   if (src == Game::Trace::FromGlyph) {   // which glyph: the one carved at the well you offered to
     const int gl = Game::glyphAt(run(), game.atlas, wellId);
     char gn[16] = "";
@@ -225,6 +291,9 @@ inline const char* sourceName(uint8_t src, int ed, char* b, int cap) {
 inline int visitTop = 0;          // the first visit-menu row on screen
 
 inline char favorNote[40] = "";   // a favor that moved along, said once the show ends
+inline char favorDone[40] = "";   // a favor this offering finished, on the show
+inline bool glamourKept = false;  // GLAMOUR was ready and the offering made nothing: it waits for the next
+inline Game::Zero showZero = Game::Zero::None;   // why the offering made nothing (before the Wardens)
 inline float showDoneT = -1;       // when the show's last step landed (modeT)
 constexpr int ShowRows = 4;        // step lines on screen at once
 inline int showTop = -1;           // the first step line on screen once you scroll, -1 to follow the newest
@@ -251,9 +320,20 @@ inline void doSell(const Ctx& c, int e) {
     Sale s;
     saleContext(s, run(), game.atlas, w, h, e);
     score(s, run(), &lastTrace);
+    baseSteps(run(), h, run().hold[e], lastTrace);   // the ward, Ash and LOW TIDE on the units you hold
+    showZero = zeroReason(run(), s);
   }
   uint8_t gotBefore[2] = {run().jobs[0].got, run().jobs[1].got};
+  const uint8_t doneBefore[2] = {run().jobs[0].done, run().jobs[1].done};
+  const bool glamourBefore = run().n.glamour;
   lastSale = sell(run(), game.atlas, w, h, e, echoMode, &game.recent);
+  glamourKept = lastSale.why == Why::Ok && glamourBefore && run().n.glamour;
+  favorDone[0] = 0;
+  for (int i = 0; i < 2; i++) {
+    const Job& j = run().jobs[i];
+    if (j.kind && j.done && !doneBefore[i])
+      snprintf(favorDone, sizeof(favorDone), "%s FAVOR DONE: +%dc, +8 STANDING", factionWord(j.faction), (int)j.reward);
+  }
   if (lastSale.why == Why::Ok) noteOffering(wellFaction(run(), w), h.ward, e);
   lastSaleWell = w;
   favorNote[0] = 0;
@@ -292,7 +372,7 @@ inline void closeNight(int battery) {
   Game::Run& r = run();
   if (!r.active || !r.n.met || game.phase != Game::Phase::Night) return;
   logNight(Game::NightPaid);
-  game.lastEnd = Game::endNight(r, game.career, battery, &game.moments.portent);
+  game.lastEnd = Game::endNight(r, game.career, battery, &game.moments.portent, &game.moments.swap, &game.moments.dawn);
   dawnToken();
   noteCollectorLine();
   game.phase = Game::Phase::NightEnd;
@@ -313,6 +393,8 @@ inline void afterShow(const Ctx& c) {
   }
   if (favorNote[0] && !r.n.met) toast(favorNote, UI::Accent);
   favorNote[0] = 0;
+  if (glamourKept && !r.n.met) toastAfter("GLAMOUR KEPT FOR THE NEXT ONE", UI::Accent);
+  glamourKept = false;
 }
 
 // An offering that rings plays the well's tune as a chord, with the energy you brought.
@@ -324,6 +406,20 @@ inline void ringChord() {
 // ---- Updates ------------------------------------------------------------------
 
 inline uint32_t echoFrom = 0;   // the well you were at when ECHO opened the atlas
+// A glyph about to be replaced: the row (or spell slot) asked about, while its warning is up.
+inline int replaceAsk = -1;
+inline bool askedReplace(int row) {
+  const bool again = replaceAsk == row && toastT > 0;
+  replaceAsk = again ? -1 : row;
+  return again;
+}
+inline void warnReplace(int glyph) {
+  char b[40], gn[16];
+  upper(Cat::Glyphs[glyph].name, gn, sizeof(gn));
+  snprintf(b, sizeof(b), "ENTER AGAIN: REPLACES %s GLYPH", gn);
+  toast(b, UI::Rec);
+  beep(330, 60);
+}
 
 inline void updateVisit(const Ctx& c, const Press& p) {
   using namespace Game;
@@ -335,14 +431,15 @@ inline void updateVisit(const Ctx& c, const Press& p) {
     snprintf(b, sizeof(b), "A FAVOR: A SMALL JOB, +%dc WHEN DONE", (int)jobOffer(run(), currentView(c)).reward);
     teachToast(Taught::Favor, b, "WORTH THE COIN OF 2 TO 4 OFFERINGS");
   }
-  // ESC leaves, to the list you came from; an echo visit goes back to the atlas.
+  // ESC goes back to the well's page; an echo visit goes back to the atlas.
   if (p.back) {
     if (echoMode) { echoMode = false; go(Mode::Atlas); }
-    else go(listMode);
+    else go(Mode::Well);
     return;
   }
   if (p.down && sel < nActions - 1) sel++;
   if (p.up && sel > 0) sel--;
+  if (p.up || p.down) replaceAsk = -1;
   if (!p.enter || nActions == 0) return;
   const Action a = actions[sel];
   if (!a.ok) {
@@ -365,6 +462,8 @@ inline void updateVisit(const Ctx& c, const Press& p) {
     case Act::Cast: back = Mode::Visit; go(Mode::Spells); break;
     case Act::Carve: {
       const int g = run().glyphTokens[a.arg];
+      const int there = glyphAt(run(), game.atlas, currentView(c).id);
+      if (there >= 0 && !askedReplace(sel)) { warnReplace(there); break; }
       if (carve(run(), game.atlas, currentView(c), hereNow(c), a.arg)) {
         char b[40], n[16];
         upper(Cat::Glyphs[g].name, n, sizeof(n));
@@ -390,9 +489,12 @@ inline void updateVisit(const Ctx& c, const Press& p) {
 
 inline void updateDrawing(const Ctx& c, const Press& p, float dt) {
   if (!drawDone) {
-    steadySum += c.gyro ? c.motion.steadiness : 1.0;
-    steadyN++;
-    if (modeT >= (c.gyro ? DrawHold : 0.5f)) {
+    const bool ready = modeT >= drawReady(c);
+    if (ready) {
+      steadySum += c.gyro ? c.motion.steadiness : 1.0;
+      steadyN++;
+    }
+    if (modeT >= drawReady(c) + drawHold(c)) {
       const double s = steadyN ? steadySum / steadyN : 1;
       lastDraw = Game::draw(run(), game.atlas, currentView(c), hereNow(c), s, drawFocusPending);
       drawDone = true;
@@ -401,7 +503,7 @@ inline void updateDrawing(const Ctx& c, const Press& p, float dt) {
       beep(lastDraw.spilled ? 330 : 660, 70);
       if (lastDraw.units) beep(880, 90);
     }
-    stepCup(c, dt);
+    stepCup(c, dt, ready && spillingNow(c));
     if (p.back) { go(Mode::Visit); toast("DRAW STOPPED", UI::Dim); }
     return;
   }
@@ -434,14 +536,15 @@ inline void updateShow(const Ctx& c, const Press& p) {
     }
     if (shownSteps == total) {
       if (lastSale.blocked) { beep(220, 90); beep(165, 220); }   // taken: falling, low
+      else if (lastSale.resonance <= 0) { beep(262, 90); beep(196, 200); }   // it made nothing: no ring
       else { beep(1047, 60); beep(1319, 120); if (showBurn) beep(98, 260); if (showRecord) beep(1568, 180); ringChord(); }
     }
   }
   if (total == 0 && shownSteps == 0 && modeT > 0.2f) {
     shownSteps = 1;
-    beep(lastSale.blocked ? 196 : 1047, 120);
+    beep(lastSale.blocked || lastSale.resonance <= 0 ? 196 : 1047, 120);
     if (showBurn) beep(98, 260);
-    if (!lastSale.blocked) ringChord();
+    if (!lastSale.blocked && lastSale.resonance > 0) ringChord();
   }
   if (showDoneT < 0 && (total > 0 ? shownSteps >= total : shownSteps == 1)) showDoneT = modeT;
   // Once it's done, up and down scroll back through every step.
@@ -477,7 +580,7 @@ inline void drawHoldLine(Canvas& g, int x, int y, int gap = 6) {
 // ESC LEAVE, what you're holding, and the Night's visits and coin.
 inline void drawRunFooter(Canvas& g) {
   UI::footerLine(g);
-  const int x = UI::keyHint(g, 2, "ESC", "LEAVE", UI::Text);
+  const int x = UI::keyHint(g, 2, "ESC", "BACK", UI::Text);
   drawHoldLine(g, x, UI::FooterY, 3);
   const Game::Run& r = run();
   char b[32];
@@ -556,15 +659,40 @@ inline void drawVisit(Canvas& g, const Ctx& c) {
       UI::text(g, 3, 108, why, why == b ? UI::Dim : UI::Rec);   // settling is a wait, not a refusal
     } else if (a.act == Act::Job) {
       UI::text(g, 3, 108, jobText(jobOffer(run(), w), b, sizeof(b)), UI::Accent);
-    } else if (a.act == Act::Sell && a.arg == Static && wardensCanCome(run()) && heatAfterStatic(run()) >= 3) {
-      snprintf(b, sizeof(b), "HEAT %.1f: THE WARDENS WILL LISTEN", heatAfterStatic(run()));
-      UI::text(g, 3, 108, b, UI::Rec);
     } else if (a.act == Act::Sell) {
-      char n[16];
-      snprintf(b, sizeof(b), "TITHE %s TO GO", UI::num(effectiveTithe(run()) - run().n.total, n, sizeof(n)));
-      UI::text(g, 3, 108, b, UI::Dim);
+      Sale s;
+      saleContext(s, run(), game.atlas, w, hereNow(c), a.arg);
+      const char* zero = zeroText(zeroReason(run(), s), b, sizeof(b));
+      const bool listening = wardensCanCome(run()) && !wardHolds(run(), hereNow(c));   // a twist's ward keeps them off
+      char t[40];
+      if (zero) {
+        UI::text(g, 3, 108, zero, UI::Rec);
+      } else if (listening && run().heat >= 3) {
+        snprintf(b, sizeof(b), "HEAT %.1f: THE WARDENS ARE LISTENING", run().heat);
+        UI::text(g, 3, 108, b, UI::Rec);
+      } else if (listening && a.arg == Static && heatAfterStatic(run()) >= 3) {
+        snprintf(b, sizeof(b), "HEAT %.1f: THE WARDENS WILL LISTEN", heatAfterStatic(run()));
+        UI::text(g, 3, 108, b, UI::Rec);
+      } else if (s.tired) {   // the Ash Pact: the same energy as the last offering
+        snprintf(b, sizeof(b), "ASH: %s TWICE PAYS %d%% LESS", energyWord(a.arg), (int)lround((1 - rules.tire) * 100));
+        UI::text(g, 3, 108, b, UI::Rec);
+      } else if (tourLine(t, sizeof(t))) {
+        UI::text(g, 3, 108, t, UI::Accent);
+      } else {
+        char n[16];
+        snprintf(b, sizeof(b), "TITHE %s TO GO", UI::num(effectiveTithe(run()) - run().n.total, n, sizeof(n)));
+        UI::text(g, 3, 108, b, UI::Dim);
+      }
     } else if (a.act == Act::DrawOwn || a.act == Act::DrawFocus) {
-      UI::text(g, 3, 108, c.gyro ? "HOLD THE DECK STILL TO DRAW CLEAN" : "", UI::Dim);
+      const int whole = (int)lround(drawUnits(run(), w));
+      if (a.est < whole) {   // the hold is nearly full: the row is priced at what fits
+        snprintf(b, sizeof(b), "YOUR HOLD HAS ROOM FOR %d", (int)a.est);
+        UI::text(g, 3, 108, b, UI::Dim);
+      } else if (forcedLine(b, sizeof(b))) {
+        UI::text(g, 3, 108, b, UI::energyColor(a.arg));
+      } else {
+        UI::text(g, 3, 108, c.gyro ? "HOLD THE DECK STILL TO DRAW CLEAN" : "", UI::Dim);
+      }
     } else if (a.act == Act::Carve) {   // what it would do (it replaces any glyph named above)
       UI::text(g, 3, 108, Cat::Glyphs[run().glyphTokens[a.arg]].text, UI::Accent);
     } else if (carved >= 0) {   // what the glyph here does
@@ -577,15 +705,25 @@ inline void drawVisit(Canvas& g, const Ctx& c) {
 inline void drawDrawing(Canvas& g, const Ctx& c, float t) {
   g.fillSprite(UI::Bg);
   const int cx = UI::W / 2, cy = 58;
-  const int e = drawDone ? lastDraw.energy : (drawFocusPending ? run().focus : Game::wellEnergy(run(), currentView(c)));
+  const int forced = Game::forcedDraw(run());
+  const int e = drawDone ? lastDraw.energy
+                : forced >= 0 ? forced : (drawFocusPending ? run().focus : Game::wellEnergy(run(), currentView(c)));
   const uint16_t ec = UI::energyColor(e < 0 ? 0 : e);
   if (!drawDone) {
-    const float hold = c.gyro ? DrawHold : 0.5f;
-    const float f = modeT / hold > 1 ? 1 : modeT / hold;
+    const float ready = drawReady(c), since = modeT - ready;
+    const float f = since <= 0 ? 0 : since / drawHold(c) > 1 ? 1 : since / drawHold(c);
     drawCup(g, c, f, ec);
     UI::energyGlyph(g, cx - 3, 18, (Energy)(e < 0 ? 0 : e), ec);
+    if (ready > 0) {   // the ring round the mark closes, clockwise from the top
+      const float k = modeT / ready > 1 ? 1 : modeT / ready;
+      const int n = (int)(k * 64);
+      for (int i = 0; i < n; i++) {
+        const float a = i * (2 * (float)M_PI / 64);
+        g.drawPixel(cx + (int)lroundf(8 * sinf(a)), 21 - (int)lroundf(8 * cosf(a)), k < 1 ? UI::dimmed(ec) : ec);
+      }
+    }
     UI::textCenter(g, 102, c.gyro ? "HOLD STILL" : "DRAWING", UI::Text);
-    if (c.gyro && c.motion.steadiness < 0.5f) UI::textCenter(g, 112, "IT'S SPILLING", UI::Rec);
+    if (since > 0 && spillingNow(c)) UI::textCenter(g, 112, "IT'S SPILLING", UI::Rec);
     UI::footerLine(g);
     UI::keyHint(g, 2, "ESC", "STOP", UI::Dim);
     (void)cy;
@@ -598,12 +736,25 @@ inline void drawDrawing(Canvas& g, const Ctx& c, float t) {
     return;
   }
   snprintf(b, sizeof(b), "+%d %s", lastDraw.units, energyWord(lastDraw.energy));
-  UI::textCenter(g, 48, b, ec, 2);
+  UI::textCenter(g, 40, b, ec, 2);
+  int y = 62;
+  if (lastDraw.turned >= 0) {   // a relic turned it into another energy
+    char n[24];
+    upper(Cat::Relics[lastDraw.turned].name, n, sizeof(n));
+    snprintf(b, sizeof(b), "%s TURNED IT %s", n, energyWord(lastDraw.energy));
+    UI::textCenter(g, y, b, ec);
+    y += 11;
+  }
   if (lastDraw.spilled) {
     snprintf(b, sizeof(b), "%d SPILLED", lastDraw.spilled);
-    UI::textCenter(g, 72, b, UI::Rec);
+    UI::textCenter(g, y, b, UI::Rec);
+    y += 11;
   }
-  drawHoldLine(g, 70, 96);
+  if (lastDraw.left > 0) {
+    snprintf(b, sizeof(b), "HOLD FULL: %d LEFT IN THE WELL", lastDraw.left);
+    UI::textCenter(g, y, b, UI::Dim);
+  }
+  drawHoldLine(g, 70, 100);
 }
 
 // 6 rather than 6.0, but 4.5 stays 4.5.
@@ -653,23 +804,39 @@ inline void drawShow(Canvas& g, const Ctx& c) {
       }
     }
   }
-  struct Line { uint8_t src, field; int8_t ed; double delta, factor; } lines[Trace::Max];
+  struct Line { uint8_t src, field; int8_t ed; uint8_t twice; bool zeroed; double delta, factor; } lines[Trace::Max];
   int nl = 0;
   for (int k = 0; k < shown; k++) {
     const Trace::Step& s = lastTrace.s[k];
-    lines[nl++] = Line{s.source, s.field, s.ed, s.after - cur[s.field], cur[s.field] != 0 ? s.after / cur[s.field] : 1};
+    const bool zeroed = s.field == Trace::X && cur[s.field] == 0;   // after an x0 step, nothing multiplies
+    lines[nl++] = Line{s.source, s.field, s.ed, s.twice, zeroed, s.after - cur[s.field], cur[s.field] != 0 ? s.after / cur[s.field] : 1};
     cur[s.field] = s.after;
   }
+  // The lines under the total, one at a time: why it made nothing, the Grand
+  // tour done, a favor done, then what explains the number (COUNTS 2X, GLAMOUR X2).
+  char extra[48] = "", why[40];
+  const char* notes[5];
+  const char* zeroNote = nullptr;   // why it made nothing, in red
+  int nNotes = 0;
+  if (!lastSale.blocked && lastSale.resonance <= 0) {
+    zeroNote = zeroText(showZero, why, sizeof(why));
+    if (zeroNote) notes[nNotes++] = zeroNote;
+  }
+  if (!lastSale.blocked && lastSale.tourDone) notes[nNotes++] = "GRAND TOUR DONE: TITHE HALVED";
+  if (!lastSale.blocked && favorDone[0]) notes[nNotes++] = favorDone;
   // The window of step lines: the newest while it plays, or wherever you've scrolled.
-  // Room for COUNTS 2X, or the record it beat.
-  const int rows = ShowRows - ((showRecord && showDoneT >= 0) || cur[4] > 0 || lastSale.glamour || lastSale.witching ? 1 : 0);
+  // Room for a line under the total, or the record it beat.
+  double repsAll = 0;
+  for (int k = 0; k < lastTrace.n; k++) if (lastTrace.s[k].field == Trace::Repeats) repsAll = lastTrace.s[k].after;
+  const bool explains = repsAll > 0 || lastSale.glamour || lastSale.witching;
+  const int rows = ShowRows - ((showRecord && showDoneT >= 0) || explains || nNotes > 0 ? 1 : 0);
   int top = nl > rows ? nl - rows : 0;
   if (showTop >= 0 && nl > rows) top = showTop > nl - rows ? nl - rows : showTop;
   if (top > 0) g.fillTriangle(UI::W - 3, 48, UI::W - 5, 50, UI::W - 1, 50, UI::Dim);
   if (top + rows < nl) g.fillTriangle(UI::W - 3, 52 + rows * 10, UI::W - 5, 50 + rows * 10, UI::W - 1, 50 + rows * 10, UI::Dim);
   // Units x Thirst x Amp, with one decimal each, each in its color. The one
   // the newest step changed pops: it jumps and flashes white.
-  const double mult = cur[2] * cur[3];
+  const double mult = lastTrace.amp(cur[2], cur[3]);
   char f[3][12];
   tidy(cur[0], f[0], sizeof(f[0])); tidy(cur[1], f[1], sizeof(f[1])); tidy(mult, f[2], sizeof(f[2]));
   {
@@ -698,14 +865,22 @@ inline void drawShow(Canvas& g, const Ctx& c) {
   for (int i = top; i < nl && i < top + rows; i++) {
     const Line& l = lines[i];
     const int y = 52 + (i - top) * 10;
-    char who[32];
+    char who[48];
     sourceName(l.src, l.ed, who, sizeof(who));
-    UI::text(g, 8, y, who, i == nl - 1 ? UI::SelText : UI::Dim);
     static const char* const field[] = {"UNITS", "THIRST", "AMP", "AMP", "REPEATS"};
     static const uint16_t fcol[] = {UI::UnitsColor, UI::ThirstColor, UI::AmpColor, UI::AmpColor, 0};
-    if (l.field == Trace::X) snprintf(b, sizeof(b), "x%.3g %s", l.factor, field[l.field]);
+    if (l.field == Trace::X && l.zeroed) snprintf(b, sizeof(b), "AMP STAYS 0");   // anything times 0
+    else if (l.field == Trace::X) snprintf(b, sizeof(b), "x%.3g %s", l.factor, field[l.field]);
     else if (l.field == Trace::Repeats) snprintf(b, sizeof(b), "COUNTS AGAIN");
+    else if (l.src == Trace::FromWard || l.src == Trace::FromPact || (l.src == Trace::FromOmen && run().n.omen != Cat::Omen_iron_price))
+      snprintf(b, sizeof(b), "x%.3g %s", l.factor, field[l.field]);   // the ward, Ash, LOW TIDE and THE FADE multiply
     else snprintf(b, sizeof(b), "%+.3g %s", l.delta, field[l.field]);
+    if (l.twice) {   // fired again by Copycat sigil or Overtone; without the shine's name if it won't fit
+      const char* tag = l.twice == Trace::Copied ? " (COPIED)" : " (OVERTONE)";
+      if (8 + UI::textW(who) + UI::textW(tag) + 8 + UI::textW(b) + 8 > UI::W) sourceName(l.src, -1, who, sizeof(who));
+      if (8 + UI::textW(who) + UI::textW(tag) + 8 + UI::textW(b) + 8 <= UI::W) strncat(who, tag, sizeof(who) - strlen(who) - 1);
+    }
+    UI::text(g, 8, y, who, i == nl - 1 ? UI::SelText : UI::Dim);
     const uint16_t fc = l.field == Trace::Repeats ? UI::Accent : fcol[l.field];
     UI::textRight(g, UI::W - 8, y, b, i == nl - 1 ? fc : UI::dimmed(fc));
   }
@@ -731,17 +906,18 @@ inline void drawShow(Canvas& g, const Ctx& c) {
       // A big one counts up white and lands in gold.
       const uint16_t col = !showBurn ? UI::SelText : since < countT ? UI::Text : Gold;
       UI::text(g, (UI::W - UI::textW(b, 2)) / 2 + shakeX, 94, b, col, 2);
-      char extra[48] = "";
       if (cur[4] > 0) snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), "COUNTS %dX ", (int)cur[4] + 1);
       if (lastSale.glamour) snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), "GLAMOUR X2 ");
       if (lastSale.witching) snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), "WITCHING X3");
-      // What explains the number comes first (COUNTS 2X, GLAMOUR X2), then the record it beat.
-      const bool beat = showRecord && beatText[0] && since >= countT && (!extra[0] || since >= countT + 2.4f);
-      const char* line = beat ? beatText : extra[0] ? extra : nullptr;
+      // What explains the number comes first (why it's 0, COUNTS 2X, GLAMOUR X2), one at a time, then the record it beat.
+      if (extra[0] && nNotes < 5) notes[nNotes++] = extra;
+      const int step = since < countT ? 0 : (int)((since - countT) / 2.4f);
+      const bool beat = showRecord && beatText[0] && since >= countT && step >= nNotes;
+      const char* line = beat ? beatText : nNotes ? notes[step < nNotes ? step : nNotes - 1] : nullptr;
       if (line) {
         const int lw = UI::textW(line) + 8;
         g.fillRect((UI::W - lw) / 2, 83, lw, 9, UI::Bg);   // the rings pass behind it
-        UI::textCenter(g, 84, line, line == beatText ? Gold : UI::Accent);
+        UI::textCenter(g, 84, line, line == beatText ? Gold : line == zeroNote ? UI::Rec : UI::Accent);
       }
     }
   }
@@ -756,8 +932,8 @@ inline void drawShow(Canvas& g, const Ctx& c) {
   UI::text(g, 2, UI::FooterY, b, done && r.n.met ? UI::SelText : UI::Text);
   int right = UI::W - 2;
   if (done && !lastSale.blocked) {
-    if (lastSale.jobCoin) snprintf(b, sizeof(b), "FAVOR +%dc", lastSale.jobCoin);
-    else snprintf(b, sizeof(b), "+%dc AT DAWN", (int)lastSale.coin);
+    const int coin = (int)lastSale.coin;   // Hungry coin can make it less than nothing
+    snprintf(b, sizeof(b), coin < 0 ? "%dc AT DAWN" : "+%dc AT DAWN", coin);
     UI::textRight(g, right, UI::FooterY, b, UI::Dim);
     right -= UI::textW(b) + 12;
   }
@@ -785,6 +961,7 @@ inline void updateSpells(const Ctx& c, const Press& p) {
   if (p.back) { typed[0] = 0; go(back); return; }
   if (p.down && sel < r.nSpells - 1) sel++;
   if (p.up && sel > 0) sel--;
+  if (p.up || p.down || p.ch) replaceAsk = -1;
   // Typing a spell's name picks it, the way the Deck was meant to be used.
   if (p.ch) {
     const size_t len = strlen(typed);
@@ -798,14 +975,37 @@ inline void updateSpells(const Ctx& c, const Press& p) {
   const int sp = r.spells[sel];
   const WellRec* wr = c.sky.byId(wellId);
   Game::WellView w = wr ? viewOf(*wr, c.sky, c.st.nowMs) : Game::WellView{};
+  if (wr) holdReach(w, *wr, c.sky);
+  // CHALK over a glyph you carved: ENTER again to replace it.
+  if (sp == Cat::Spell_chalk && wr && w.sig >= ReachDbm) {
+    const int there = glyphAt(r, game.atlas, w.id);
+    if (there >= 0 && !askedReplace(100 + sel)) { warnReplace(there); return; }
+  }
+  replaceAsk = -1;
+  const int omen = r.n.omen;
+  const double titheWas = effectiveTithe(r);
   const CastResult res = castSpell(r, game.atlas, game.career, sel, wr ? &w : nullptr, hereNow(c));
-  char b[40], n[16];
+  char b[40], n[16], m[24];
+  upper(Cat::Spells[sp].name, n, sizeof(n));
   switch (res.how) {
     case Cast::Ok:
-      upper(Cat::Spells[sp].name, n, sizeof(n));
       if (res.glyph >= 0) { char gn[16]; upper(Cat::Glyphs[res.glyph].name, gn, sizeof(gn)); snprintf(b, sizeof(b), "%s GLYPH CARVED", gn); }
       else if (res.relic >= 0 && sp == Cat::Spell_summon) { upper(Cat::Relics[res.relic].name, b, sizeof(b)); }
-      else if (sp == Cat::Spell_transmute && r.n.transmuteLeft > 0)   // cast with an empty hold, nothing shows: say what it set up
+      else if (sp == Cat::Spell_kindle && res.relic >= 0) {   // which relic, and which shine
+        char en[12];
+        upper(Cat::Relics[res.relic].name, m, sizeof(m));
+        upper(Cat::Editions[res.edition].name, en, sizeof(en));
+        snprintf(b, sizeof(b), "%s IS NOW %s", m, en);
+      } else if (sp == Cat::Spell_recall && res.spell >= 0)
+        snprintf(b, sizeof(b), "RECALL: %s IS BACK", Cat::Spells[res.spell].name);
+      else if (sp == Cat::Spell_augur && omen >= 0) {   // what clearing it gave back
+        upper(Cat::Omens[omen].name, m, sizeof(m));
+        char t[16];
+        if (omen == Cat::Omen_short_night) snprintf(b, sizeof(b), "%s CLEARED: 2 VISITS BACK", m);
+        else if (omen == Cat::Omen_blood_price && effectiveTithe(r) < titheWas)
+          snprintf(b, sizeof(b), "%s CLEARED: TITHE %s", m, UI::num(effectiveTithe(r), t, sizeof(t)));
+        else snprintf(b, sizeof(b), "%s CLEARED", m);
+      } else if (sp == Cat::Spell_transmute && r.n.transmuteLeft > 0)   // cast with an empty hold, nothing shows: say what it set up
         snprintf(b, sizeof(b), "TRANSMUTE: NEXT %d OFFERINGS AS %s", r.n.transmuteLeft, energyWord(r.n.transmuteE));
       else snprintf(b, sizeof(b), "%s CAST", n);
       toast(b, UI::Accent);
@@ -816,8 +1016,26 @@ inline void updateSpells(const Ctx& c, const Press& p) {
       go(back);
       break;
     case Cast::NeedWell: toast("STAND AT A WELL TO CAST IT", UI::Rec); beep(180, 80); break;
-    case Cast::NoSlot: toast("NO FREE RELIC SLOT", UI::Rec); beep(180, 80); break;
-    default: toast("NOTHING FOR IT TO DO", UI::Rec); beep(180, 80); break;
+    case Cast::NoSlot:
+      toast(r.nRelics >= Game::Run::MaxRelics ? "THE DECK HOLDS 8 RELICS AT MOST" : "NO FREE RELIC SLOT", UI::Rec);
+      beep(180, 80);
+      break;
+    case Cast::Ready:   // a second cast would be wasted
+      snprintf(b, sizeof(b), sp == Cat::Spell_veil ? "%s IS ALREADY ON TONIGHT" : sp == Cat::Spell_bargain ? "%s IS ALREADY WAITING" : "%s IS ALREADY READY", n);
+      toast(b, UI::Rec);
+      beep(180, 80);
+      break;
+    case Cast::TooLate: toast("AUGUR CAN'T CALL OFF THE WARDENS", UI::Rec); beep(180, 80); break;
+    default: {
+      const char* why = "NOTHING FOR IT TO DO";
+      if (sp == Cat::Spell_augur) why = "NO OMEN TONIGHT TO CLEAR";
+      else if (sp == Cat::Spell_kindle) why = r.nRelics ? "EVERY RELIC ALREADY SHINES" : "NO RELIC TO KINDLE";
+      else if (sp == Cat::Spell_recall) why = "NO SPELL CAST YET TO RECALL";
+      else if (sp == Cat::Spell_summon) why = "NO LEGENDARY LEFT TO SUMMON";
+      toast(why, UI::Rec);
+      beep(180, 80);
+      break;
+    }
   }
 }
 
@@ -833,6 +1051,8 @@ inline void drawSpells(Canvas& g, const Ctx& c) {
     const int y = 18 + i * 27;
     if (i == sel) g.fillRect(0, y - 2, UI::W, 26, UI::SelBg);
     UI::text(g, 6, y, s.name, i == sel ? UI::SelText : UI::Text);
+    if (Game::spellWaiting(r, r.spells[i]))   // already set up: another cast would be wasted
+      UI::textRight(g, UI::W - 6, y, r.spells[i] == Cat::Spell_veil ? "ON TONIGHT" : r.spells[i] == Cat::Spell_bargain ? "WAITING" : "READY", UI::Accent);
     UI::wrap(g, 6, y + 9, UI::W - 12, s.text, UI::Dim, 2, 8, 0, true);   // a long one takes two lines
   }
   const int flavorY = 18 + r.nSpells * 27 > 100 ? 18 + r.nSpells * 27 : 100;

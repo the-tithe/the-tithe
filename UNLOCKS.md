@@ -49,7 +49,7 @@ A Calling is how a week starts. Each one changes a rule, so the same city plays 
 |---|---|---|
 | **Wayfarer** | No twist. The Deck as it comes. | Start |
 | **Hedge witch** | Starts with Static eater and Static-caller. Wardens never appear. | Start |
-| **Hermit** | Starts with Hearthstone. Wells you've visited before can be drawn twice a Night. | Start |
+| **Hermit** | Starts with Hearthstone. A well you offered at on an earlier Night can be drawn twice. | Start |
 | **Courier** | Units ×1.4 on every draw, but only 10 visits per Night | Hold a week |
 | **Diviner** | Starts with Lodestone and True north. You see each Omen two Nights early. | Dowse 30 times |
 | **Night clerk** | Interest cap doubled, but rerolls cost 2 more | Hold 30 coin at once |
@@ -72,8 +72,8 @@ opens the next Pact for that Calling. There are 12 Callings × 8 Pacts, so 96 se
 |---|---|
 | **Chalk** | Nothing added. The Deck as it comes. |
 | **Lead** | The Tithe pays no coin at dawn. Live on trade, favors and spare visits. |
-| **Iron** | One visit fewer each Night: 11, not 12. |
-| **Ash** | Every offering lands lighter: Units ×0.9. |
+| **Iron** | Nights 5, 6 and 7 ask ×1.25, ×1.5, ×1.75. Buy what grows before you need it. |
+| **Ash** | The same energy twice in a row pays 30% less. Carry more than one. |
 | **Bone** | Relics don't all last: some on the stall are Withered and crumble after 3 Nights. |
 | **Silver** | Rerolls start at 8 coin, and Polish costs twice as much. |
 | **Obsidian** | No Syndicate loan, and candles cost twice as much. |
@@ -93,8 +93,8 @@ win, then one more with each win after that. Each one awards its own seal.
 | **Night owl** | 8 visits per Night, but Portents start at 4 visits to spare |
 | **Glass house** | Start with Glass crown. It can't be sold or swapped out, and Tithes are x2.5. |
 | **Static storm** | Every well is an open network. Heat never cools. |
-| **The long way** | Wells you've visited before earn nothing |
-| **Homebody** | From Night 2, you can only visit wells you've visited before, but they take offerings and refill all Night |
+| **The long way** | Wells you offered at on an earlier Night earn nothing |
+| **Homebody** | From Night 2, you can only offer where you offered on an earlier Night, but those wells refill all Night |
 | **Empty pockets** | No stall. Each Night you pay brings a free relic and an Attunement instead. |
 | **Grand tour** | Visit all four kinds of ward each Night, or the Tithe doubles |
 | **Redline** | Start with Overclock and Witching hour, and 2 extra visits a Night to run them. Tithes ×2.5. |

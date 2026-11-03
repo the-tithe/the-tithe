@@ -44,14 +44,17 @@ struct Here {
   double playSec;       // seconds of play, for the ward's timer
 };
 
-constexpr float ReachDbm = -67;   // close enough to trade (NEAR on the scanner)
+constexpr float ReachDbm = -70;   // close enough to trade (NEAR on the scanner)
+constexpr float HoldDbm = -75;    // a well you opened in reach stays open until it fades past this
 constexpr float StrongDbm = -55;  // "standing right next to it"
 
 // ---- Setting up ---------------------------------------------------------------
 
 inline double titheFor(const Run& r, int night, int omen, int eclipse) {
-  double t = night < Nights ? Tithes[night] : Tithes[Nights - 1] * pow(OvernightGrowth, night - Nights + 1);
+  double t = night < Nights ? Tithes[night] : Tithes[Nights - 1];
+  for (int k = 0; k < night - Nights + 1; k++) t *= OvernightGrowth + rules.overnightAccel * k;   // Overnight
   if (pactRung(r, rules.saltRung)) t *= 1 + 0.05 * night;
+  if (pactOn(r, PR_iron) && night >= 4) t *= rules.steep[night < 6 ? night - 4 : 2];
   if (owns(r, Cat::R_blood_moon)) t *= 1.35;
   if (omen == Cat::Omen_blood_price) t *= 1.2;
   if (eclipse == Cat::Eclipse_hunger) t *= 1.25;
@@ -73,7 +76,7 @@ inline int visitsFor(const Run& r) {
   if (r.challenge == 2) v = 8;    // Night owl
   if (r.challenge == 9) v = 14;   // Redline
   v += hasMod(r, Cat::Mod_extra_breath) + hasMod(r, Cat::Mod_second_wind);
-  v -= 2 * owns(r, Cat::R_overclock) + pactOn(r, PR_iron);
+  v -= 2 * owns(r, Cat::R_overclock);
   if (r.n.omen == Cat::Omen_short_night) v -= 2;
   if (r.n.eclipse == Cat::Eclipse_dark) v -= 2;
   return v < 1 ? 1 : v;
@@ -143,9 +146,10 @@ inline void newRun(Run& r, const Career& car, int calling, int pact, int challen
 // it (Cat::Challenges index, -1 for none).
 inline int trialForPact(int pact) {
   using namespace Cat;
-  static const int8_t trial[PactCount] = {-1, 0, 2, 6, 7, 1, 3, 9};
-  //  Chalk none; Lead: Shoestring; Iron: Night owl; Ash: Homebody; Bone: Empty pockets;
-  //  Silver: One note; Obsidian: Glass house; Gold: Redline.
+  static const int8_t trial[PactCount] = {-1, 0, 2, 3, 7, 1, 6, 9};
+  //  Chalk none; Lead: Shoestring; Iron: Night owl; Ash: Glass house (the crown refuses a different
+  //  energy each Night, so you carry more than one); Bone: Empty pockets; Silver: One note;
+  //  Obsidian: Homebody; Gold: Redline.
   return pact >= 0 && pact < PactCount ? trial[pact] : -1;
 }
 
@@ -156,8 +160,10 @@ inline int tonightsEnergy(const Run& r, int e) {
   return e;
 }
 
-// Start the Night `r.night`.
-inline void beginNight(Run& r) {
+// Start the Night `r.night`. `turned`, if given, gets the Omen + 1 (low 4 bits)
+// and the Eclipse + 1 (high 4 bits) that a ward turned away, for the Night's
+// first screen to say so.
+inline void beginNight(Run& r, uint8_t* turned = nullptr) {
   using namespace Cat;
   const bool inWeek = r.night < Nights;
   int omen, ecl;
@@ -168,8 +174,10 @@ inline void beginNight(Run& r) {
     omen = (int)r.rng.below(OmenCount);
     ecl = (r.night - Nights) % 3 == 2 ? (int)r.rng.below(EclipseCount) : -1;
   }
-  if (omen >= 0 && hasMod(r, Mod_charm_ward) && r.rng.chance(0.5)) omen = -1;
-  if (ecl >= 0 && hasMod(r, Mod_eclipse_ward) && r.rng.chance(0.5)) ecl = -1;
+  int away = 0;
+  if (omen >= 0 && hasMod(r, Mod_charm_ward) && r.rng.chance(0.5)) { away |= omen + 1; omen = -1; }
+  if (ecl >= 0 && hasMod(r, Mod_eclipse_ward) && r.rng.chance(0.5)) { away |= (ecl + 1) << 4; ecl = -1; }
+  if (turned) *turned = (uint8_t)away;
   if (omen >= 0) stat(r, Stat::omens_seen);
   memset(&r.n, 0, sizeof(r.n));
   r.n.omen = (int8_t)omen;
@@ -217,10 +225,14 @@ inline double priceAt(const Run& r, const WellView& w, const Here& h, int e) {
 }
 
 inline int wellFaction(const Run& r, const WellView& w) { return r.challenge == 4 ? (int)Hedge : w.faction; }
-inline int wellEnergy(const Run& r, const WellView& w) {
-  if (r.challenge == 4) return Static;   // Static storm: every well is open
-  return tonightsEnergy(r, w.energy);
+// What a well whose own energy is `e` gives tonight: Glitch's shuffle, or
+// Static everywhere in a Static storm (every well is open). The scanner, the
+// glass, a well's page, the visit and the atlas all show this.
+inline int energyTonight(const Run& r, int e) {
+  if (r.challenge == 4) return Static;
+  return tonightsEnergy(r, e);
 }
+inline int wellEnergy(const Run& r, const WellView& w) { return energyTonight(r, w.energy); }
 
 // ---- Drawing --------------------------------------------------------------------
 
@@ -274,12 +286,18 @@ inline int settleLeft(const AtlasEntry* a) {
   return !a || settled(a) ? 0 : (int)(a->lastPlay + SettleMin - playMinNow);
 }
 
+// Offered at on an earlier Night of this week (an offering tonight doesn't
+// count): what "visited before" means on relics. From Overnight Night 16 on
+// every Night shares the atlas's last Night bit, so the Night of the last
+// offering there says it too.
+inline bool offeredBefore(const Run& r, const AtlasEntry* a) {
+  if (!a || a->runNo != r.runNo) return false;
+  return (a->nights & ~(uint16_t)(1u << Atlas::nightBit(r.night))) != 0 || (a->soldNight >= 0 && a->soldNight < r.night);
+}
+
 inline int drawsAllowed(const Run& r, const AtlasEntry* a) {
   if (homebodyOpen(r, a)) return 1000;
-  // Visited on an earlier Night of this run (a sale tonight doesn't count).
-  const bool visitedBefore =
-      a && a->runNo == r.runNo && (a->nights & ~(uint16_t)(1u << Atlas::nightBit(r.night))) != 0;
-  return isCalling(r, Cat::Calling_hermit) && visitedBefore ? 2 : 1;
+  return isCalling(r, Cat::Calling_hermit) && offeredBefore(r, a) ? 2 : 1;
 }
 
 inline Why canDraw(const Run& r, const Atlas& atlas, const WellView& w) {
@@ -311,11 +329,41 @@ inline double drawUnits(const Run& r, const WellView& w) {
   return units;
 }
 
+// The energy every draw gives whatever the well: TRANSMUTE's while it lasts,
+// else your focus for a Pilgrim or on One note. -1 when draws aren't forced.
+inline int forcedDraw(const Run& r) {
+  if (r.n.transmuteLeft > 0) return r.n.transmuteE;
+  if (isCalling(r, Cat::Calling_pilgrim) || r.challenge == 1) return r.focus;
+  return -1;
+}
+
+// The units a draw at `w` can put in the hold: the draw, or the room left
+// in it (a SURGE may overfill the hold).
+inline int drawFits(const Run& r, const WellView& w) {
+  const int whole = (int)lround(drawUnits(r, w));
+  if (r.n.surge) return whole;
+  int held = 0;
+  for (int e = 0; e < EnergyN; e++) held += r.hold[e];
+  const int room = holdCap(r) - held;
+  return whole < room ? whole : room > 0 ? room : 0;
+}
+
+// The relic that turns a draw into Static, if you hold one (Static eater,
+// Black ledger, Smuggler's lining or Wanted poster), else -1.
+inline int staticTurner(const Run& r) {
+  using namespace Cat;
+  static const int k[4] = {R_static_eater, R_black_ledger, R_smugglers_lining, R_wanted_poster};
+  for (int id : k) if (owns(r, id)) return id;
+  return -1;
+}
+
 struct Drawn {
   Why why;
   int energy;
   int units;
-  int spilled;
+  int spilled;         // lost to a shaky hand, of what fitted in the hold
+  int left = 0;        // stayed in the well: the hold was full
+  int turned = -1;     // the relic that turned it into another energy (Hush lantern, a Static relic), -1 none
 };
 
 // Draw energy from a well into the hold. `focus` asks for your focus energy
@@ -327,24 +375,24 @@ inline Drawn draw(Run& r, Atlas& atlas, const WellView& w, const Here& h, double
   if (d.why != Why::Ok) return d;
   using namespace Cat;
   int e = focus && givesFocus(r, w) ? r.focus : wellEnergy(r, w);
-  if (owns(r, R_hush_lantern) && r.rng.chance(0.14)) e = Hush;
-  else if ((owns(r, R_static_eater) || owns(r, R_black_ledger) || owns(r, R_smugglers_lining) ||
-            owns(r, R_wanted_poster)) && r.rng.chance(0.15)) e = Static;
-  if (isCalling(r, Calling_pilgrim) || r.challenge == 1) e = r.focus;
-  if (r.n.transmuteLeft > 0) e = r.n.transmuteE;   // TRANSMUTE: for its next 4 sales
+  const int asked = e;
+  int turner = -1;
+  if (owns(r, R_hush_lantern) && r.rng.chance(0.14)) { e = Hush; turner = R_hush_lantern; }
+  else if (staticTurner(r) >= 0 && r.rng.chance(0.15)) { e = Static; turner = staticTurner(r); }
+  if (forcedDraw(r) >= 0) { e = forcedDraw(r); turner = -1; }   // Pilgrim, One note, TRANSMUTE (its next 4 sales)
+  d.turned = e != asked ? turner : -1;
   const double units = drawUnits(r, w);
-  const bool surged = r.n.surge;
+  const int fits = drawFits(r, w);   // a SURGE may overfill the hold
   r.n.surge = 0;
   const double s = steadiness < 0 ? 0 : steadiness > 1 ? 1 : steadiness;
   const int whole = (int)lround(units);
   int got = (int)lround(units * (0.75 + 0.25 * s));
-  d.spilled = whole - got;
-  int held = 0;
-  for (int k = 0; k < EnergyN; k++) held += r.hold[k];
-  int room = holdCap(r) - held;
-  if (got > room && !surged) got = room > 0 ? room : 0;   // a SURGE may overfill the hold
+  if (got > fits) got = fits;
   if (got < 0) got = 0;
+  d.spilled = fits - got;   // only what would have fitted counts as spilled
+  d.left = whole - fits;
   r.hold[e] = (uint8_t)(r.hold[e] + got > 255 ? 255 : r.hold[e] + got);
+  if (owns(r, R_rain_gauge)) r.state[R_rain_gauge] += 1.5 * rules.growth;
   d.energy = e;
   d.units = got;
   // A draw doesn't restart the settling clock of a well that's had an offering
@@ -367,7 +415,7 @@ inline Drawn draw(Run& r, Atlas& atlas, const WellView& w, const Here& h, double
 
 // The hold slowly leaks: one unit every 15 minutes of play, from the biggest
 // stack. Hush never leaks, nor does Static with a Static eater.
-inline int leak(Run& r, uint32_t playMs) {
+inline int leak(Run& r, uint32_t playMs, int* which = nullptr) {
   if (r.holdLeakMs == 0 || playMs < r.holdLeakMs) { r.holdLeakMs = playMs; return 0; }
   int lost = 0;
   while (playMs - r.holdLeakMs >= 15u * 60000u) {
@@ -377,7 +425,7 @@ inline int leak(Run& r, uint32_t playMs) {
       if (e == Hush || (e == Static && owns(r, Cat::R_static_eater))) continue;
       if (r.hold[e] > 0 && (big < 0 || r.hold[e] > r.hold[big])) big = e;
     }
-    if (big >= 0) { r.hold[big]--; lost++; }
+    if (big >= 0) { r.hold[big]--; lost++; if (which) *which = big; }
   }
   return lost;
 }
@@ -412,7 +460,7 @@ inline Job jobOffer(const Run& r, const WellView& w) {
   uint32_t h = w.seed ^ (r.runNo * 0x9E3779B1u) ^ ((uint32_t)r.night * 0x85EBCA77u);
   h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12;
   if (h % 3 != 0 || !r.active || r.n.met) return j;
-  const int f = w.faction;
+  const int f = wellFaction(r, w);   // in a Static storm every well is Hedge, so its favors can be done
   if ((r.n.jobsDone >> f) & 1) return j;   // one job per faction a Night
   j.faction = (uint8_t)f;
   switch (f) {
@@ -513,7 +561,35 @@ struct Sold {
   bool closed;         // this sale paid the Tithe
   bool isNew;
   int jobCoin;         // coin from a job this sale finished
+  bool tourDone;       // Grand tour: this offering filled the fourth ward, and the Tithe halved
 };
+
+// Why an offering makes nothing before the Wardens: tonight's Omen, the
+// Trial, or Glass crown.
+enum class Zero : uint8_t { None, SilentBell, LongWay, Crown };
+inline Zero zeroReason(const Run& r, const Sale& c) {
+  if (r.n.omen == Cat::Omen_silent_bell && c.vi < 2) return Zero::SilentBell;
+  if (r.challenge == 5 && c.revisit) return Zero::LongWay;
+  if (owns(r, Cat::R_glass_crown) && c.e == r.n.crownBan) return Zero::Crown;
+  return Zero::None;
+}
+
+// What the ward and LOW TIDE did to the units you hold before
+// any relic, as steps at the front of the show's trace (saleContext's order).
+inline void baseSteps(const Run& r, const Here& h, double held, Trace& t) {
+  Trace::Step pre[3];
+  int k = 0;
+  double u = held;
+  if (h.ward == Hollow || h.ward == Nexus) { u *= h.ward == Hollow ? 0.85 : 1.2; pre[k++] = Trace::Step{Trace::FromWard, Trace::Units, -1, Trace::Once, u}; }
+  if (r.n.omen == Cat::Omen_low_tide) { u *= 0.75; pre[k++] = Trace::Step{Trace::FromOmen, Trace::Units, -1, Trace::Once, u}; }
+  t.ward = (int8_t)h.ward;
+  if (!k) return;
+  const int n = t.n + k > Trace::Max ? Trace::Max - k : t.n;
+  for (int i = n - 1; i >= 0; i--) t.s[i + k] = t.s[i];
+  for (int i = 0; i < k; i++) t.s[i] = pre[i];
+  t.n = n + k;
+  t.units0 = held;
+}
 
 // Build the sale context for selling energy `e` at well `w`.
 inline void saleContext(Sale& c, const Run& r, const Atlas& atlas, const WellView& w, const Here& h, int e) {
@@ -529,9 +605,9 @@ inline void saleContext(Sale& c, const Run& r, const Atlas& atlas, const WellVie
   c.units = r.hold[e];
   if (h.ward == Hollow) c.units *= 0.85;
   else if (h.ward == Nexus) c.units *= 1.2;
-  if (pactOn(r, PR_ash)) c.units *= 0.9;
   if (r.n.omen == Omen_low_tide) c.units *= 0.75;
   c.price = priceAt(r, w, h, e);
+  c.tired = pactOn(r, PR_ash) && r.n.kinds && e == r.lastE;
   // Offered again after settling: on a busy street, where fresh wells are easy, it wants less.
   if (thisRun && a->soldNight == r.night && !homebodyOpen(r, a) && h.ward >= WardW) c.price *= ResettledThirst;
   c.mult = 1 + lvl + lvl * hasMod(r, Mod_tuning_core);
@@ -543,10 +619,10 @@ inline void saleContext(Sale& c, const Run& r, const Atlas& atlas, const WellVie
   c.ch11 = h.ch11;
   c.strong = w.sig >= StrongDbm;
   c.mesh = w.mesh >= 2 ? w.mesh : 0;
-  c.revisit = (nights & ~tonight) != 0;
+  c.revisit = (nights & ~tonight) != 0 || (thisRun && a->soldNight >= 0 && a->soldNight < r.night);   // offeredBefore()
   c.nightsSeen = bits(nights | tonight);
   c.glyph = thisRun ? a->glyph : -1;
-  c.isNew = !a || a->visits == 0 || c.glyph == Glyph_beacon;
+  c.isNew = ((!a || a->visits == 0) && !offeredBefore(w.id)) || c.glyph == Glyph_beacon;   // a well the atlas forgot and met again isn't new
   c.wardChanged = r.n.lastWard >= 0 && r.n.lastWard != h.ward;
   c.wardsTonight = r.n.wards + (c.wardChanged ? 1 : 0);
   c.noise = h.noise;
@@ -596,21 +672,25 @@ inline Sold sell(Run& r, Atlas& atlas, const WellView& w, const Here& h, int e, 
   const int faction = wellFaction(r, w);
   if (s.c.wardChanged) r.n.wards++;
   r.n.lastWard = (int8_t)h.ward;
+  if (owns(r, R_mixtape) && r.lastE >= 0 && e != r.lastE) r.state[R_mixtape] += 3.0 * rules.growth;
+  if (owns(r, R_prism_jar) && !(r.n.kinds & (1u << e))) r.state[R_prism_jar] += 0.3 * rules.growth;
+  if (owns(r, R_pedometer)) r.state[R_pedometer] += 0.9 * rules.growth;
   r.lastE = (int8_t)e;
   r.sales++;
   r.n.kinds |= (uint8_t)(1u << e);
+  s.tourDone = r.challenge == 8 && r.n.wardKinds != 0xF && (r.n.wardKinds | (1u << h.ward)) == 0xF;
   r.n.wardKinds |= (uint8_t)(1u << h.ward);
   r.n.hollows += h.ward == Hollow;
   r.wardSeen[h.ward]++;
   if (s.c.isNew) {
     r.newWells += 1;
     r.n.newTonight++;
-    if (owns(r, R_pilgrims_staff)) r.state[R_pilgrims_staff] += 0.05;
+    if (owns(r, R_pilgrims_staff)) r.state[R_pilgrims_staff] += 0.15 * rules.growth;
   }
-  if (faction == Hearth && owns(r, R_picket_fence)) r.state[R_picket_fence] += 0.25;
-  if (s.c.hidden && owns(r, R_locked_diary)) r.state[R_locked_diary] += 0.15;
+  if (faction == Hearth && owns(r, R_picket_fence)) r.state[R_picket_fence] += 0.75 * rules.growth;
+  if (s.c.hidden && owns(r, R_locked_diary)) r.state[R_locked_diary] += 0.45 * rules.growth;
   if (e == Static) {
-    if (owns(r, R_black_ledger)) r.state[R_black_ledger] += 0.2;
+    if (owns(r, R_black_ledger)) r.state[R_black_ledger] += 0.6 * rules.growth;
     if (!(owns(r, R_static_eater) || r.n.veil)) r.heat = r.heat + 0.5 > 4 ? 4 : r.heat + 0.5;
     r.standing[Warded] -= 2;
     r.standing[Syndicate] -= 2;
@@ -631,7 +711,7 @@ inline Sold sell(Run& r, Atlas& atlas, const WellView& w, const Here& h, int e, 
   if (w.channel >= 1 && w.channel <= 13) r.channels |= (uint16_t)(1u << w.channel);
   // The atlas remembers.
   AtlasEntry& a = atlas.touch(w.id, w.seed, r.runNo, h.playMin);
-  if (a.visits == 0) atlas.unique++;
+  if (a.visits == 0 && !offeredBefore(w.id)) atlas.unique++;
   a.visits++;
   a.nights |= (uint16_t)(1u << Atlas::nightBit(r.night));
   a.soldNight = r.night;
@@ -715,61 +795,117 @@ inline int pickWeighted(Run& r, const double* w, int n) { return r.rng.weighted(
 
 struct PortentResult {
   int portent;
-  int relic;     // a relic given, -1 none
-  int coin;      // coin given (or a gift that didn't fit)
-  int spell;     // a spell given, -1 none
+  int relic;     // a relic given (or waiting for room), -1 none, -2 left for want of room,
+                 // -3 a Conjunction with no legendary to give
+  int coin;      // coin given, after the Shoestring cap
+  int spell;     // Scroll: the spell given (or waiting for a slot); Chalk mark: the glyph given.
+                 // -1 none, -2 none for want of room (no spell slot, or 4 glyphs held already)
 };
 
-inline int rollPortent(Run& r) {
-  static const double w[Cat::PortentCount] = {3, 2, 3, 2, 2, 2, 2, 2, 2, 0.3};
-  return (int)pickWeighted(r, w, Cat::PortentCount);
+// Portents that go to the stall and can only be used once there: a second
+// one at the same dawn would do nothing, so a dawn never rolls the same one twice.
+constexpr uint32_t FlagPortents = 1u << Cat::Portent_rare_sight | 1u << Cat::Portent_free_rerolls |
+                                  1u << Cat::Portent_shine | 1u << Cat::Portent_doubled_interest;
+
+// Legendaries open to you that you don't hold yet: what Conjunction (and SUMMON) can give.
+inline int legendariesOpen(const Run& r, const Career& car) {
+  int n = 0;
+  for (int i = 0; i < Cat::RelicCount; i++)
+    n += Cat::Relics[i].legendary && unlocked(car, Kind::Relic, i) && !owns(r, i);
+  return n;
+}
+
+// The Portents (a bit each) that can't do anything for this week: Empty
+// pockets has no stall for Rare sight or Free rerolls, One note's stall rolls
+// no relics for Rare sight or a Shine, and Conjunction needs a legendary left
+// to give (`conjunctions` already rolled at this dawn have one each spoken for).
+inline uint32_t uselessPortents(const Run& r, const Career& car, int conjunctions = 0) {
+  using namespace Cat;
+  uint32_t out = 0;
+  if (r.challenge == 7) out |= 1u << Portent_rare_sight | 1u << Portent_free_rerolls;   // Empty pockets
+  if (r.challenge == 1) out |= 1u << Portent_rare_sight | 1u << Portent_shine;          // One note
+  if (legendariesOpen(r, car) <= conjunctions) out |= 1u << Portent_conjunction;
+  return out;
+}
+
+// A Portent at random, leaving out the kinds in `avoid` (a bit per Cat::Portent).
+inline int rollPortent(Run& r, uint32_t avoid = 0) {
+  static const double base[Cat::PortentCount] = {3, 2, 3, 2, 2, 2, 2, 2, 2, 0.3};
+  double w[Cat::PortentCount];
+  int last = -1;
+  for (int i = 0; i < Cat::PortentCount; i++) {
+    w[i] = (avoid >> i) & 1 ? 0 : base[i];
+    if (w[i] > 0) last = i;
+  }
+  if (last < 0) return (int)pickWeighted(r, base, Cat::PortentCount);   // nothing left to avoid
+  const int p = (int)pickWeighted(r, w, Cat::PortentCount);
+  return w[p] > 0 ? p : last;   // rounding can land past the last weight
 }
 
 // Give Portent `kind` for the Night just paid (`paidNight`, 0-based). A
-// Doubled interest kept at the dawn screen, after endNight has paid out, is
-// handed that Night's `interest` and pays it again on the spot; endNight
-// itself passes -1 and pays it through the shop flag.
-inline PortentResult grantPortent(Run& r, const Career& car, int kind, int paidNight, int interest = -1) {
+// Doubled interest is handed that Night's `interest` and pays it again on the
+// spot (the caller adds it to the dawn's INTEREST row); with -1 it waits for
+// the next dawn through the shop flag.
+//
+// A Gift or Conjunction relic with no slot free waits in `swap` (row `k`) for
+// the dawn screen to sell one of yours for it, and a Scroll's spell with no
+// slot free waits there for you to forget one of yours; without `swap` either
+// is left.
+inline PortentResult grantPortent(Run& r, const Career& car, int kind, int paidNight, int interest = -1,
+                                  GiftSwap* swap = nullptr, int k = 0) {
   using namespace Cat;
   PortentResult out{kind, -1, 0, -1};
+  const double coinWas = r.coin;
   switch (out.portent) {
-    case Portent_windfall: r.coin += 10; out.coin = 10; break;
+    case Portent_windfall: r.coin += 10; break;
     case Portent_doubled_interest:
-      if (interest < 0) r.shopFlags |= SF_DoubleInterest;
-      else { r.coin += interest; out.coin = interest; }
+      if (interest < 0) { r.shopFlags |= SF_DoubleInterest; break; }
+      r.coin += interest;
+      if (owns(r, R_piggy_bank)) r.state[R_piggy_bank] += 1.5 * interest * rules.growth;   // interest you earn, doubled or not
+      if (owns(r, R_seed_vault)) r.state[R_seed_vault] += 0.3 * interest * rules.growth;
       break;
     case Portent_rare_sight: r.shopFlags |= SF_RareSight; break;
     case Portent_free_rerolls: r.shopFlags |= SF_FreeRerolls; break;
     case Portent_shine: r.shopFlags |= SF_Shine; break;
     case Portent_tuning: if (r.attune[r.focus] < 250) r.attune[r.focus]++; break;
-    case Portent_scroll:
-      if (r.nSpells < spellSlots(r)) {
-        int pool[SpellCount], k = 0;
-        for (int i = 0; i < SpellCount; i++) if (i != Spell_summon && unlocked(car, Kind::Spell, i)) pool[k++] = i;
-        if (k) { out.spell = pool[r.rng.below(k)]; r.spells[r.nSpells++] = (uint8_t)out.spell; }
-      }
+    case Portent_scroll: {
+      int pool[SpellCount], n = 0;
+      for (int i = 0; i < SpellCount; i++) if (i != Spell_summon && unlocked(car, Kind::Spell, i)) pool[n++] = i;
+      if (!n) break;
+      out.spell = pool[r.rng.below(n)];
+      if (r.nSpells < spellSlots(r)) r.spells[r.nSpells++] = (uint8_t)out.spell;
+      else if (swap) { swap->id[k] = (uint8_t)(SwapSpell | (out.spell + 1)); swap->ed[k] = -1; swap->withered[k] = -1; }
+      else out.spell = -2;
       break;
-    case Portent_chalk_mark:
-      if (r.nGlyphTokens < 4) r.glyphTokens[r.nGlyphTokens++] = (uint8_t)r.rng.below(GlyphCount);
-      stat(r, Stat::glyphs_total);
+    }
+    case Portent_chalk_mark:   // only a glyph you get counts toward carving goals
+      if (r.nGlyphTokens < 4) {
+        out.spell = (int)r.rng.below(GlyphCount);
+        r.glyphTokens[r.nGlyphTokens++] = (uint8_t)out.spell;
+        stat(r, Stat::glyphs_total);
+      } else {
+        out.spell = -2;
+      }
       break;
     case Portent_gift: {
       int ed, wi;
       const int id = rollRelic(r, car, paidNight >= 3 ? Rare : Uncommon, false, ed, wi, paidNight);
       if (id >= 0) {
         if (slotsUsed(r) < relicSlots(r) || ed == Edition_phantom) { addRelic(r, id, ed, wi); out.relic = id; }
-        else { out.coin = Relics[id].rarity == Rare ? PriceRare : PriceUncommon; r.coin += out.coin; }
+        else if (swap) { swap->id[k] = (uint8_t)(id + 1); swap->ed[k] = (int8_t)ed; swap->withered[k] = (int8_t)wi; out.relic = id; }
       }
       break;
     }
     case Portent_conjunction: {
-      int pool[RelicCount], k = 0;
+      int pool[RelicCount], n = 0;
       for (int i = 0; i < RelicCount; i++)
-        if (Relics[i].legendary && unlocked(car, Kind::Relic, i) && !owns(r, i)) pool[k++] = i;
-      if (k) {
-        const int id = pool[r.rng.below(k)];
+        if (Relics[i].legendary && unlocked(car, Kind::Relic, i) && !owns(r, i)) pool[n++] = i;
+      out.relic = -3;
+      if (n) {
+        const int id = pool[r.rng.below(n)];
+        out.relic = -1;
         if (slotsUsed(r) < relicSlots(r)) { addRelic(r, id); out.relic = id; }
-        else { out.coin = PriceRare; r.coin += out.coin; }
+        else if (swap) { swap->id[k] = (uint8_t)(id + 1); swap->ed[k] = -1; swap->withered[k] = -1; out.relic = id; }
       }
       break;
     }
@@ -777,10 +913,16 @@ inline PortentResult grantPortent(Run& r, const Career& car, int kind, int paidN
   }
   stat(r, Stat::portents);
   clampCoin(r);
+  out.coin = (int)lround(r.coin - coinWas);
   return out;
 }
 
-inline PortentResult applyPortent(Run& r, const Career& car) { return grantPortent(r, car, rollPortent(r), r.night); }
+// The coin Portent `kind` was worth before the Shoestring cap: Windfall's 10,
+// or the Night's interest again for Doubled interest.
+inline int portentCoin(int kind, int interest) {
+  return kind == Cat::Portent_windfall ? 10 : kind == Cat::Portent_doubled_interest && interest > 0 ? interest : 0;
+}
+
 
 // ---- The end of a Night -------------------------------------------------------
 
@@ -795,17 +937,26 @@ struct NightEnd {
   bool withered;       // a Withered relic crumbled
   bool repaid;         // a loan paid off tonight (sits in what was padding, so saves keep their layout)
   uint8_t favors;      // coin from favors finished tonight, for the dawn tally (the last padding byte)
-  int gift = -1;       // Empty pockets: the Night's free relic
+  int gift = -1;       // Empty pockets: the Night's free relic (or waiting for room), -1 none; -2 - id once left
 };
 static_assert(sizeof(NightEnd) == 96 && offsetof(NightEnd, gift) == 92, "NightEnd is saved as-is: nothing may move");
 
+// The Empty pockets relic of a dawn, given, waiting or left: -1 none.
+inline int nightRelic(const NightEnd& e) { return e.gift >= 0 ? e.gift : e.gift <= -2 ? -2 - e.gift : -1; }
+
 // Close a paid Night (by Tithe or loan) and pay out. Call once. With `choice`,
 // below the Portent-choice rung each Portent earned is rolled as one of two and
-// left for choosePortent(); without it every Portent is given at once.
-inline NightEnd endNight(Run& r, const Career& car, int battery, PortentChoice* choice = nullptr) {
+// left for choosePortent(); without it every Portent is given at once. A free
+// relic or spell with no room for it waits in `swap` (see grantPortent), and
+// Empty pockets' relic in `notes`, which also keeps what crumbled and what the
+// Shoestring cap took.
+inline NightEnd endNight(Run& r, const Career& car, int battery, PortentChoice* choice = nullptr,
+                         GiftSwap* swap = nullptr, DawnNotes* notes = nullptr) {
   using namespace Cat;
   NightEnd out{};
   if (choice) *choice = PortentChoice{};
+  if (swap) *swap = GiftSwap{};
+  if (notes) *notes = DawnNotes{};
   out.paid = r.n.met != 0;
   if (!out.paid) return out;
   const bool loan = r.n.closedBy == 2;
@@ -814,12 +965,12 @@ inline NightEnd endNight(Run& r, const Career& car, int battery, PortentChoice* 
   const bool choose = choice && rules.portentChoiceBelow && r.pact < rules.portentChoiceBelow;
   const int spare = r.n.visits - r.n.used;
   out.spare = spare;
-  if (!loan && owns(r, R_patience)) r.state[R_patience] += spare;
+  if (!loan && owns(r, R_patience)) r.state[R_patience] += 3 * spare * rules.growth;
   if (!loan && r.hadLoan) { stat(r, Stat::loans_repaid); out.repaid = true; }
   r.hadLoan = r.owed > 0;
   stat(r, Stat::nights_paid);
-  if (owns(r, R_tally_stick)) r.state[R_tally_stick] += 1.0;
-  if (owns(r, R_ritual_candle)) r.state[R_ritual_candle] += 0.15;
+  if (owns(r, R_tally_stick)) r.state[R_tally_stick] += 3.0 * rules.growth;
+  if (owns(r, R_ritual_candle)) r.state[R_ritual_candle] += 0.45 * rules.growth;
   if (spare <= 1 || r.n.candles > 0 || (loan && r.owed > 0)) {
     r.shopFlags |= SF_Mercy;
     stat(r, Stat::mercies);
@@ -843,7 +994,8 @@ inline NightEnd endNight(Run& r, const Career& car, int battery, PortentChoice* 
   int interest = (int)(r.coin / InterestPer);
   if (interest > cap) interest = cap;
   if (interest < 0) interest = 0;
-  if (owns(r, R_piggy_bank)) r.state[R_piggy_bank] += 0.5 * interest;
+  if (owns(r, R_piggy_bank)) r.state[R_piggy_bank] += 1.5 * interest * rules.growth;
+  if (owns(r, R_seed_vault)) r.state[R_seed_vault] += 0.3 * interest * rules.growth;
   int gilt = 0;
   for (int i = 0; i < r.nRelics; i++) gilt += r.relics[i].ed == Edition_gilt ? 2 : 0;
   const int thread = hasTrinket(r, Trinket_golden_thread) && spare >= 4 ? 4 : 0;
@@ -863,38 +1015,73 @@ inline NightEnd endNight(Run& r, const Career& car, int battery, PortentChoice* 
   int favors = 0;
   for (int i = 0; i < 2; i++) if (r.jobs[i].kind && r.jobs[i].done) favors += r.jobs[i].reward;
   out.favors = (uint8_t)(favors > 255 ? 255 : favors);
-  r.coin = r.coin + out.trade + out.spareCoin + out.reward + interest + gilt + thread + skim;
+  const double coinWas = r.coin;
+  int paidIn = out.trade + out.spareCoin + out.reward + interest + gilt + thread + skim;   // before the Shoestring cap
+  r.coin += paidIn;
   clampCoin(r);
+  // Withered relics count down before anything new arrives, so a relic given
+  // at this dawn gets all its Nights.
+  for (int i = r.nRelics - 1; i >= 0; i--) {
+    if (r.relics[i].withered < 0) continue;
+    if (--r.relics[i].withered > 0) continue;
+    if (notes) {
+      notes->crumbled = (uint8_t)(r.relics[i].id + 1);
+      notes->nCrumbled++;
+    }
+    removeRelicAt(r, i);
+    out.withered = true;
+  }
+  // The Portents. A dawn never rolls the same stall Portent twice (a second
+  // would do nothing), nor one that can't do anything this week.
+  uint32_t flagsRolled = 0;
+  int conjunctions = 0;
+  auto roll = [&](uint32_t avoid) {
+    const int p = rollPortent(r, avoid | flagsRolled | uselessPortents(r, car, conjunctions));
+    flagsRolled |= FlagPortents & (1u << p);
+    conjunctions += p == Portent_conjunction;
+    return p;
+  };
   const int shift = r.challenge == 2 ? 2 : 0;   // Night owl: Portents start 2 sooner
   for (int k = 0; k < 3; k++) {
     if (spare < PortentAt[k] - shift || out.portents >= 3) continue;
-    if (!choose) { out.got[out.portents++] = applyPortent(r, car); continue; }
-    const int a = rollPortent(r);
-    int b = rollPortent(r);
-    for (int tries = 0; b == a && tries < 8; tries++) b = rollPortent(r);
-    if (b == a) { out.got[out.portents++] = grantPortent(r, car, a, r.night); continue; }
-    out.got[out.portents] = PortentResult{a, -1, 0, -1};
-    choice->alt[out.portents] = (uint8_t)(b + 1);
-    choice->pending |= (uint8_t)(1u << out.portents);
-    out.portents++;
+    const int j = out.portents++;
+    const int a = roll(0);
+    const int b = choose ? roll(1u << a) : a;
+    if (b == a) {   // given at once
+      out.got[j] = grantPortent(r, car, a, r.night, interest, swap, j);
+      if (a == Portent_doubled_interest) out.interest += interest;
+      paidIn += portentCoin(a, interest);
+      continue;
+    }
+    out.got[j] = PortentResult{a, -1, 0, -1};
+    choice->alt[j] = (uint8_t)(b + 1);
+    choice->pending |= (uint8_t)(1u << j);
   }
   if (choice) choice->interest = (uint8_t)(interest > 255 ? 255 : interest);
-  // Doubled interest: tonight's interest pays again.
+  // Doubled interest from an older dawn's flag: tonight's interest pays again.
   if (r.shopFlags & SF_DoubleInterest) {
     r.shopFlags &= ~SF_DoubleInterest;
     r.coin += interest;
     out.interest += interest;
+    paidIn += interest;
+    if (owns(r, R_piggy_bank)) r.state[R_piggy_bank] += 1.5 * interest * rules.growth;
+    if (owns(r, R_seed_vault)) r.state[R_seed_vault] += 0.3 * interest * rules.growth;
     clampCoin(r);
   }
   if (r.challenge == 7) {   // Empty pockets: no shop, but a relic and an Attunement each Night
     int ed, wi;
     const int id = rollRelic(r, car, r.night >= 3 ? Cat::Rare : Cat::Uncommon, false, ed, wi, r.night);
-    if (id >= 0 && slotsUsed(r) < relicSlots(r)) { addRelic(r, id, ed, wi); out.gift = id; }
+    if (id >= 0) {
+      out.gift = id;
+      if (slotsUsed(r) < relicSlots(r) || ed == Edition_phantom) addRelic(r, id, ed, wi);
+      else if (notes) { notes->gift = (uint8_t)(id + 1); notes->giftEd = (int8_t)ed; }   // waits for room
+      else out.gift = -2 - id;
+    }
     if (r.attune[r.focus] < 250) r.attune[r.focus]++;
   }
-  for (int i = r.nRelics - 1; i >= 0; i--) {
-    if (r.relics[i].withered < 0) continue;
-    if (--r.relics[i].withered <= 0) { removeRelicAt(r, i); out.withered = true; }
+  if (notes) {   // what the Shoestring cap took
+    const double lost = coinWas + paidIn - r.coin;
+    notes->capped = (uint8_t)(lost >= 255 ? 255 : lost > 0 ? (int)lround(lost) : 0);
   }
   best(r, Stat::max_coin, (uint32_t)r.coin);
   if (r.night == Nights - 1) {
@@ -907,11 +1094,16 @@ inline NightEnd endNight(Run& r, const Career& car, int battery, PortentChoice* 
 }
 
 // Keep one of Portent k's two: the one endNight rolled first, or (`other`) the
-// alternative. Does nothing once k is settled.
-inline PortentResult choosePortent(Run& r, const Career& car, NightEnd& e, PortentChoice& ch, int k, bool other) {
+// alternative. Does nothing once k is settled. A Doubled interest joins the
+// dawn's INTEREST row, and `notes` counts what the Shoestring cap took.
+inline PortentResult choosePortent(Run& r, const Career& car, NightEnd& e, PortentChoice& ch, int k, bool other,
+                                   GiftSwap* swap = nullptr, DawnNotes* notes = nullptr) {
   if (k < 0 || k >= e.portents || !((ch.pending >> k) & 1)) return e.got[k];
   const int kind = other ? ch.alt[k] - 1 : e.got[k].portent;
-  e.got[k] = grantPortent(r, car, kind, r.night - 1, ch.interest);   // endNight has moved on a Night
+  e.got[k] = grantPortent(r, car, kind, r.night - 1, ch.interest, swap, k);   // endNight has moved on a Night
+  if (kind == Cat::Portent_doubled_interest) e.interest += ch.interest;
+  const int lost = portentCoin(kind, ch.interest) - e.got[k].coin;
+  if (notes && lost > 0) notes->capped = (uint8_t)(notes->capped + lost > 255 ? 255 : notes->capped + lost);
   ch.pending &= (uint8_t)~(1u << k);
   ch.alt[k] = 0;
   return e.got[k];
@@ -919,7 +1111,10 @@ inline PortentResult choosePortent(Run& r, const Career& car, NightEnd& e, Porte
 
 // ---- Spells ---------------------------------------------------------------------
 
-enum class Cast : uint8_t { Ok, NoSlot, NeedWell, NothingToDo, NoRun };
+// Ready: what it sets up is already waiting (GLAMOUR, SURGE, ECHO, VEIL,
+// BARGAIN), so a second cast would be wasted. TooLate: AUGUR can't call off a
+// Wardens walk, whose Heat can't be put back.
+enum class Cast : uint8_t { Ok, NoSlot, NeedWell, NothingToDo, NoRun, Ready, TooLate };
 
 struct CastResult {
   Cast how;
@@ -927,7 +1122,21 @@ struct CastResult {
   int relic = -1;      // KINDLE / SUMMON: the relic touched
   int edition = -1;
   int spell = -1;      // RECALL: the spell returned
+  int omen = -1;       // AUGUR: the Omen cleared
 };
+
+// A spell whose effect is already set up and not yet used.
+inline bool spellWaiting(const Run& r, int sp) {
+  using namespace Cat;
+  switch (sp) {
+    case Spell_glamour: return r.n.glamour;
+    case Spell_surge: return r.n.surge;
+    case Spell_echo: return r.n.echo;
+    case Spell_veil: return r.n.veil;
+    case Spell_bargain: return r.bargain;
+    default: return false;
+  }
+}
 
 inline void removeSpellAt(Run& r, int i) {
   for (int k = i; k + 1 < r.nSpells; k++) r.spells[k] = r.spells[k + 1];
@@ -942,12 +1151,13 @@ inline CastResult castSpell(Run& r, Atlas& atlas, const Career& car, int slot, c
   if (slot < 0 || slot >= r.nSpells) { out.how = Cast::NothingToDo; return out; }
   const int sp = r.spells[slot];
   // Check first, so a spell that can't work isn't used up.
+  if (spellWaiting(r, sp)) { out.how = Cast::Ready; return out; }
   if (sp == Spell_chalk && (!here || here->sig < ReachDbm)) { out.how = Cast::NeedWell; return out; }
   if (sp == Spell_summon) {
     bool any = false;
     for (int i = 0; i < RelicCount; i++) any |= Relics[i].legendary && unlocked(car, Kind::Relic, i) && !owns(r, i);
     if (!any) { out.how = Cast::NothingToDo; return out; }
-    if (slotsUsed(r) >= relicSlots(r)) { out.how = Cast::NoSlot; return out; }
+    if (slotsUsed(r) >= relicSlots(r) || r.nRelics >= Run::MaxRelics) { out.how = Cast::NoSlot; return out; }   // Phantoms take no slot, but 8 is all the Deck holds
   }
   if (sp == Spell_recall && r.lastSpell < 0) { out.how = Cast::NothingToDo; return out; }
   if (sp == Spell_kindle) {
@@ -956,6 +1166,7 @@ inline CastResult castSpell(Run& r, Atlas& atlas, const Career& car, int slot, c
     if (!plain) { out.how = Cast::NothingToDo; return out; }
   }
   if (sp == Spell_augur && r.n.omen < 0) { out.how = Cast::NothingToDo; return out; }
+  if (sp == Spell_augur && r.n.omen == Omen_wardens_walk) { out.how = Cast::TooLate; return out; }
   removeSpellAt(r, slot);
   stat(r, Stat::spells_cast);
   if (sp != Spell_recall) r.lastSpell = (int8_t)sp;
@@ -994,7 +1205,16 @@ inline CastResult castSpell(Run& r, Atlas& atlas, const Career& car, int slot, c
       out.edition = r.relics[i].ed;
       break;
     }
-    case Spell_augur: r.n.omen = -1; break;
+    case Spell_augur: {   // the Omen goes, and so do the visits and Tithe it took at dusk
+      const int v0 = visitsFor(r);
+      const double t0 = titheFor(r, r.night, r.n.omen, r.n.eclipse);
+      out.omen = r.n.omen;
+      r.n.omen = -1;
+      r.n.visits = (int16_t)(r.n.visits + visitsFor(r) - v0);
+      r.n.tithe += titheFor(r, r.night, -1, r.n.eclipse) - t0;
+      if (!r.n.met && r.n.total >= effectiveTithe(r)) { r.n.met = 1; r.n.closedBy = 1; }
+      break;
+    }
     case Spell_recall: r.spells[r.nSpells++] = (uint8_t)r.lastSpell; out.spell = r.lastSpell; break;
     case Spell_bargain: r.bargain = 1; break;
     case Spell_summon: {
